@@ -1,0 +1,30 @@
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+.python-version
+.venv/
+venv/
+env/
+
+# Environment
+.env
+.env.*
+!.env.sample
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Generated content (mounted volumes)
+audio/
+voices/
+
+# Logs
+*.log

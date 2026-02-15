@@ -1,0 +1,93 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Radio Now</title>
+    <link rel="stylesheet" href="/static/styles.css">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+</head>
+<body>
+    <div class="container">
+        <header class="header">
+            <h1 class="logo">Radio Now</h1>
+            <p class="tagline">Audio Broadcasts from the Eternal Now</p>
+        </header>
+
+        <main class="broadcasts">
+            {% if broadcasts %}
+                {% for broadcast in broadcasts %}
+                <article class="broadcast-card" data-id="{{ broadcast._id }}">
+                    <div class="broadcast-header" onclick="toggleBroadcast('{{ broadcast._id }}')">
+                        <div class="broadcast-info">
+                            <h2 class="broadcast-title">{{ broadcast.title }}</h2>
+                            <div class="broadcast-meta">
+                                <span class="voice-name">{{ broadcast.voice_name }}</span>
+                                <span class="separator">|</span>
+                                <span class="duration">{{ format_duration(broadcast.duration_seconds) }}</span>
+                                <span class="separator">|</span>
+                                <span class="date">{{ broadcast.created_at.strftime('%b %d, %Y') }}</span>
+                            </div>
+                        </div>
+                        <div class="expand-icon">
+                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <polyline points="6 9 12 15 18 9"></polyline>
+                            </svg>
+                        </div>
+                    </div>
+                    <div class="broadcast-content" id="content-{{ broadcast._id }}">
+                        <div class="audio-player">
+                            <audio controls preload="none">
+                                <source src="/audio/{{ broadcast.audio_filename }}" type="audio/wav">
+                                Your browser does not support the audio element.
+                            </audio>
+                        </div>
+                        {% if broadcast.summary_display %}
+                        <div class="broadcast-summary">
+                            <strong>Summary:</strong> {{ broadcast.summary_display }}
+                        </div>
+                        {% endif %}
+                        <details class="script-details">
+                            <summary>View Script</summary>
+                            <div class="script-text">{{ broadcast.generated_script }}</div>
+                        </details>
+                    </div>
+                </article>
+                {% endfor %}
+            {% else %}
+                <div class="empty-state">
+                    <p>No broadcasts yet.</p>
+                    <p class="empty-hint">Check back soon for new content.</p>
+                </div>
+            {% endif %}
+        </main>
+
+        <footer class="footer">
+            <p>&copy; {{ now().year if now is defined else '2026' }} Radio Now</p>
+        </footer>
+    </div>
+
+    <script>
+        function toggleBroadcast(id) {
+            const content = document.getElementById('content-' + id);
+            const card = document.querySelector(`[data-id="${id}"]`);
+            
+            if (content.classList.contains('expanded')) {
+                content.classList.remove('expanded');
+                card.classList.remove('expanded');
+            } else {
+                // Close all others
+                document.querySelectorAll('.broadcast-content.expanded').forEach(el => {
+                    el.classList.remove('expanded');
+                    el.closest('.broadcast-card').classList.remove('expanded');
+                });
+                
+                content.classList.add('expanded');
+                card.classList.add('expanded');
+            }
+        }
+    </script>
+</body>
+</html>

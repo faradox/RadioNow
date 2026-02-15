@@ -1,0 +1,62 @@
+x-all: &all
+  DOCKER_NETWORK_NAME: ${DOCKER_NETWORK_NAME:-breathnet}
+  ENVIRONMENT: ${RADIONOW_ENVIRONMENT:-production}
+  LOG_LEVEL: ${RADIONOW_LOG_LEVEL:-INFO}
+  GEMINI_API_KEY: ${RADIONOW_GEMINI_API_KEY:?}
+  REPLICATE_API_TOKEN: ${RADIONOW_REPLICATE_API_TOKEN:?}
+  MONGO_URL: ${RADIONOW_MONGO_URL:-mongodb://${RADIONOW_MONGO_INITDB_ROOT_USERNAME:-admin}:${RADIONOW_MONGO_INITDB_ROOT_PASSWORD:-admin}@radionow-mongodb:27017/}
+
+services:
+  radionow:
+    build:
+      context: ./
+      args:
+        USER_ID: ${uid:-1000}
+        GROUP_ID: ${gid:-1000}
+    image: radionow:latest
+    container_name: radionow
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${RADIONOW_PORT:-8090}:8090"
+    volumes:
+      - ./audio:/app/audio
+      - ./voices:/app/voices
+    environment:
+      <<: [*all]
+      PORT: 8090
+    networks:
+      breathnet:
+        ipv4_address: 172.29.6.1
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8090/health').read()\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+
+  radionow-mongodb:
+    image: mongo:7
+    container_name: radionow-mongodb
+    restart: unless-stopped
+    profiles: ["localdb"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${RADIONOW_MONGO_INITDB_ROOT_USERNAME:-admin}
+      MONGO_INITDB_ROOT_PASSWORD: ${RADIONOW_MONGO_INITDB_ROOT_PASSWORD:-admin}
+    volumes:
+      - radionow_mongodb_data:/data/db
+    networks:
+      breathnet:
+        ipv4_address: 172.29.6.2
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" mongodb://${RADIONOW_MONGO_INITDB_ROOT_USERNAME:-admin}:${RADIONOW_MONGO_INITDB_ROOT_PASSWORD:-admin}@localhost:27017/admin | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+volumes:
+  radionow_mongodb_data:
+
+networks:
+  breathnet:
+    external: true
+    name: ${DOCKER_NETWORK_NAME:-breathnet}
