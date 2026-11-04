@@ -13,8 +13,9 @@ This file provides guidance for AI agents working in this directory.
 ## Project overview
 
 Radio Now is an AI-powered audio broadcast generator that creates voice-cloned "talks" using:
-- Google Gemini for text generation (script writing)
-- Replicate qwen3-tts for voice cloning and TTS
+- Google Gemini or Anthropic Claude for text generation (script writing), see `app/llm.py`
+- Replicate qwen3-tts or MiniMax Speech for voice cloning and TTS, see `app/tts.py`
+- A daily morning broadcast from RSS headlines, see `app/daily.py`
 
 Users can create custom voices by uploading reference audio, then generate broadcasts in those voices with custom topics and style transformations.
 
@@ -30,6 +31,7 @@ Users can create custom voices by uploading reference audio, then generate broad
 - `/` - Public broadcast listing
 - `/admin` - Admin dashboard (typically placed behind authentication in production)
 - `/admin/generate` - Generate new broadcast
+- `/admin?tab=daily`, `/admin/daily/*` - Daily broadcast settings, manual run
 - `/admin/voices/*` - Voice management
 
 ## Conventions

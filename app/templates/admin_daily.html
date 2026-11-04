@@ -1,0 +1,105 @@
+<section class="tab-content">
+    <h2>Daily Morning Broadcast</h2>
+    <p class="help-text" style="margin-bottom: 1.25rem;">
+        Every day at the set time (Europe/Berlin) the app pulls world headlines from public RSS
+        feeds and has the day's host write a comforting, satirical take on them. Hosts rotate
+        by date. At most one run per day; failed runs retry up to 3 times, 15 minutes apart,
+        within 6 hours of the scheduled time.
+    </p>
+
+    <form action="/admin/daily/settings" method="post" class="form">
+        <div class="form-group">
+            <label class="checkbox-label" for="enabled">
+                <input type="checkbox" name="enabled" id="enabled" {% if settings.enabled %}checked{% endif %}>
+                Enabled
+            </label>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="time">Time (Berlin)</label>
+                <input type="time" name="time" id="time" value="{{ settings.time }}" required>
+            </div>
+            <div class="form-group">
+                <label for="target_minutes_daily">Length (minutes)</label>
+                <input type="number" name="target_minutes" id="target_minutes_daily"
+                    min="2" max="15" value="{{ settings.target_minutes }}">
+            </div>
+        </div>
+
+        <div class="form-row">
+            <div class="form-group">
+                <label for="daily_llm">Script LLM</label>
+                <select name="llm_provider" id="daily_llm">
+                    <option value="" {% if not settings.llm_provider %}selected{% endif %}>Default ({{ default_provider }})</option>
+                    {% for key, label in providers.items() %}
+                    <option value="{{ key }}" {% if key == settings.llm_provider %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+            <div class="form-group">
+                <label for="daily_engine">TTS Engine</label>
+                <select name="tts_engine" id="daily_engine">
+                    <option value="" {% if not settings.tts_engine %}selected{% endif %}>Each voice's default</option>
+                    {% for key, label in engines.items() %}
+                    <option value="{{ key }}" {% if key == settings.tts_engine %}selected{% endif %}>{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label>Hosts in rotation</label>
+            {% for voice in voices %}
+            <label class="checkbox-label">
+                <input type="checkbox" name="host_voice_ids" value="{{ voice._id }}"
+                    {% if voice._id in settings.host_voice_ids %}checked{% endif %}>
+                {{ voice.name }}{% if voice.builtin_persona %} <span class="muted">(built-in persona)</span>{% endif %}
+            </label>
+            {% endfor %}
+            <small class="help-text">
+                None checked = every voice with a built-in persona (Watts, McKenna, Ram Dass).
+                Current rotation: {{ rotation | map(attribute='name') | join(', ') or 'none' }}.
+                {% if today_host %}Today's host: <strong>{{ today_host }}</strong>.{% endif %}
+            </small>
+        </div>
+
+        <button type="submit" class="btn btn-primary">Save Settings</button>
+    </form>
+
+    <form action="/admin/daily/run" method="post" class="form inline-form"
+        onsubmit="return confirm('Generate today\'s morning broadcast now? This runs even if one already exists today.');">
+        <button type="submit" class="btn btn-primary btn-small">Generate today's broadcast now</button>
+    </form>
+
+    <div class="recent-section">
+        <h3>Recent Runs</h3>
+        {% if runs %}
+        <ul class="recent-list">
+            {% for run in runs %}
+            <li class="recent-item">
+                <div class="recent-info">
+                    <span class="recent-title">{{ run._id }}: {{ run.title or run.status }}</span>
+                    <span class="recent-meta">
+                        {{ run.status }} | attempt {{ run.attempts }}{% if run.voice_name %} | {{ run.voice_name }}{% endif %}{% if run.llm_provider %} | {{ run.llm_provider }}/{{ run.tts_engine }}{% endif %}
+                    </span>
+                    {% if run.error %}<span class="run-error">{{ run.error }}</span>{% endif %}
+                    {% if run.headlines %}
+                    <details class="script-details">
+                        <summary>{{ run.headlines | length }} headlines used</summary>
+                        <ul class="headline-list">
+                            {% for h in run.headlines %}
+                            <li><span class="muted">[{{ h.source }}]</span> {% if h.link %}<a href="{{ h.link }}" target="_blank" rel="noopener">{{ h.title }}</a>{% else %}{{ h.title }}{% endif %}</li>
+                            {% endfor %}
+                        </ul>
+                    </details>
+                    {% endif %}
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+        {% else %}
+        <p class="empty-note">No daily runs yet.</p>
+        {% endif %}
+    </div>
+</section>

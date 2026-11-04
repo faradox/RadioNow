@@ -588,3 +588,73 @@ audio::-webkit-media-controls-current-time-display,
 audio::-webkit-media-controls-time-remaining-display {
     color: var(--text-secondary);
 }
+
+/* Daily broadcast + switchable engines */
+.form-row {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 1rem;
+}
+
+@media (max-width: 600px) {
+    .form-row {
+        grid-template-columns: 1fr;
+    }
+}
+
+.inline-form {
+    margin-top: 1rem;
+}
+
+.muted {
+    color: var(--text-muted);
+}
+
+.run-error {
+    display: block;
+    font-size: 0.8rem;
+    color: var(--error);
+    font-family: var(--font-mono);
+    word-break: break-word;
+}
+
+.headline-list {
+    list-style: none;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    margin-top: 0.5rem;
+    max-height: 18rem;
+    overflow-y: auto;
+}
+
+.recent-audio {
+    width: 100%;
+    height: 32px;
+    margin-top: 0.4rem;
+}
+
+.voice-card-stacked {
+    flex-direction: column;
+    align-items: stretch;
+}
+
+.voice-card-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+}
+
+.badge-daily {
+    display: inline-block;
+    font-family: var(--font-mono);
+    font-size: 0.7rem;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--bg-primary);
+    background: var(--accent);
+    border-radius: 3px;
+    padding: 0.05rem 0.4rem;
+    margin-right: 0.5rem;
+    vertical-align: middle;
+}

@@ -16,26 +16,22 @@
             <p class="tagline">Admin Dashboard</p>
         </header>
 
-        <!-- Messages -->
-        {% if message %}
-        <div class="alert alert-success">{{ message }}</div>
-        {% endif %}
-        {% if error %}
-        <div class="alert alert-error">{{ error }}</div>
+        {% if message %}<div class="alert alert-success">{{ message }}</div>{% endif %}
+        {% if error %}<div class="alert alert-error">{{ error }}</div>{% endif %}
+        {% if not providers %}
+        <div class="alert alert-warning">No LLM API key configured (RADIONOW_GEMINI_API_KEY or RADIONOW_ANTHROPIC_API_KEY).</div>
         {% endif %}
 
-        <!-- Tabs -->
         <nav class="tabs">
             <a href="/admin?tab=generate" class="tab {% if tab == 'generate' %}active{% endif %}">Generate</a>
+            <a href="/admin?tab=daily" class="tab {% if tab == 'daily' %}active{% endif %}">Daily</a>
             <a href="/admin?tab=voices" class="tab {% if tab == 'voices' %}active{% endif %}">Voices</a>
         </nav>
 
         <main class="admin-main">
-            <!-- Generate Tab -->
             {% if tab == 'generate' %}
             <section class="tab-content">
                 <h2>Generate New Broadcast</h2>
-                
                 {% if not voices %}
                 <div class="alert alert-warning">
                     No voices available. <a href="/admin?tab=voices">Create a voice first</a>.
@@ -46,62 +42,72 @@
                         <label for="voice_id">Voice</label>
                         <select name="voice_id" id="voice_id" required>
                             {% for voice in voices %}
-                            <option value="{{ voice._id }}">{{ voice.name }}</option>
+                            <option value="{{ voice._id }}">{{ voice.name }} ({{ voice.engine }})</option>
                             {% endfor %}
                         </select>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label for="llm_provider">Script LLM</label>
+                            <select name="llm_provider" id="llm_provider">
+                                {% for key, label in providers.items() %}
+                                <option value="{{ key }}" {% if key == default_provider %}selected{% endif %}>{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
+                        <div class="form-group">
+                            <label for="tts_engine">TTS Engine</label>
+                            <select name="tts_engine" id="tts_engine">
+                                <option value="">Voice default</option>
+                                {% for key, label in engines.items() %}
+                                <option value="{{ key }}">{{ label }}</option>
+                                {% endfor %}
+                            </select>
+                        </div>
                     </div>
 
                     <div class="form-group">
                         <label for="input_text">Input Text / Topic</label>
                         <textarea name="input_text" id="input_text" rows="6" required
                             placeholder="Enter a topic, mood, article, or any input for the broadcast..."></textarea>
-                        <small class="help-text">What should the broadcast be about? Can be a topic, mood, news article, or any text.</small>
+                        <small class="help-text">The voice's persona (Voices tab) shapes how the script is written.</small>
                     </div>
 
                     <div class="form-group">
                         <label for="twist">Twist (Optional)</label>
                         <textarea name="twist" id="twist" rows="3"
-                            placeholder="e.g., 'Write in the style of Terence McKenna: psychedelic, poetic, recursive phrasing...' or 'Make it humorous and satirical'"></textarea>
-                        <small class="help-text">Affects text generation (Gemini). Define writing style, tone, or content transformation.</small>
+                            placeholder="e.g. 'Make it a bedtime story' or 'Humorous and satirical'"></textarea>
+                        <small class="help-text">Extra style or content transformation for the script.</small>
                     </div>
 
                     <div class="form-group">
                         <label for="target_minutes">
-                            Target Script Length:
-                            <span id="target-minutes-value">4</span> min
+                            Target Script Length: <span id="target-minutes-value">4</span> min
                         </label>
-                        <input type="range" name="target_minutes" id="target_minutes"
-                            min="1" max="20" step="1" value="4">
-                        <small class="help-text">Controls target text length in the generation prompt.</small>
+                        <input type="range" name="target_minutes" id="target_minutes" min="1" max="20" step="1" value="4">
                     </div>
 
                     <div class="form-group">
                         <label class="checkbox-label" for="generate_in_chunks">
-                            <input type="checkbox" name="generate_in_chunks"
-                                id="generate_in_chunks" checked>
+                            <input type="checkbox" name="generate_in_chunks" id="generate_in_chunks" checked>
                             Generate in chunks
                         </label>
                         <small class="help-text">
-                            When enabled, TTS is generated in paragraph-aligned chunks and
-                            stitched together with short silences.
+                            Paragraph-aligned TTS chunks joined with short gaps. Qwen3 drifts on long
+                            texts, so keep this on there; MiniMax handles a whole script per request.
                         </small>
                     </div>
 
                     <div class="form-group" id="chunk-minutes-group">
                         <label for="chunk_minutes">Approx. chunk length (minutes)</label>
-                        <input type="number" name="chunk_minutes" id="chunk_minutes"
-                            min="0.25" max="10" step="0.25" value="1">
-                        <small class="help-text">
-                            Target duration for each TTS chunk. Chunk boundaries stay aligned
-                            to full paragraphs.
-                        </small>
+                        <input type="number" name="chunk_minutes" id="chunk_minutes" min="0.25" max="10" step="0.25" value="1">
                     </div>
 
                     <div class="form-group">
-                        <label for="style_override">TTS Style Override (Optional)</label>
-                        <textarea name="style_override" id="style_override" rows="4"
-                            placeholder="e.g., 'Speak slowly with dramatic pauses' or 'Energetic and enthusiastic delivery'"></textarea>
-                        <small class="help-text">Affects speech delivery (qwen3-tts). Leave empty to use the voice's default style instruction.</small>
+                        <label for="style_override">TTS Style Override (Optional, Qwen3 only)</label>
+                        <textarea name="style_override" id="style_override" rows="3"
+                            placeholder="e.g. 'Speak slowly with dramatic pauses'"></textarea>
                     </div>
 
                     <button type="submit" class="btn btn-primary" id="generate-btn">
@@ -111,7 +117,6 @@
                 </form>
                 {% endif %}
 
-                <!-- Recent Broadcasts -->
                 {% if recent_broadcasts %}
                 <div class="recent-section">
                     <h3>Recent Broadcasts</h3>
@@ -121,8 +126,11 @@
                             <div class="recent-info">
                                 <span class="recent-title">{{ broadcast.title }}</span>
                                 <span class="recent-meta">
-                                    {{ broadcast.voice_name }} | {{ format_duration(broadcast.duration_seconds) }} | {{ broadcast.created_at.strftime('%b %d') }}
+                                    {{ broadcast.voice_name }} | {{ format_duration(broadcast.duration_seconds) }} | {{ broadcast.created_at.strftime('%b %d') }}{% if broadcast.llm_provider %} | {{ broadcast.llm_provider }}/{{ broadcast.tts_engine }}{% endif %}{% if broadcast.kind == 'daily' %} | daily{% endif %}
                                 </span>
+                                <audio controls preload="none" class="recent-audio">
+                                    <source src="/audio/{{ broadcast.audio_filename }}" type="{{ audio_mime(broadcast.audio_filename) }}">
+                                </audio>
                             </div>
                             <form action="/admin/broadcasts/{{ broadcast._id }}/delete" method="post" class="recent-actions"
                                 onsubmit="return confirm('Delete broadcast &quot;{{ broadcast.title }}&quot;? This will also remove the audio file.');">
@@ -136,70 +144,12 @@
             </section>
             {% endif %}
 
-            <!-- Voices Tab -->
+            {% if tab == 'daily' %}
+            {% include "admin_daily.html" %}
+            {% endif %}
+
             {% if tab == 'voices' %}
-            <section class="tab-content">
-                <h2>Manage Voices</h2>
-
-                <!-- Existing Voices -->
-                {% if voices %}
-                <div class="voices-list">
-                    {% for voice in voices %}
-                    <div class="voice-card">
-                        <div class="voice-info">
-                            <h3 class="voice-name">{{ voice.name }}</h3>
-                            <p class="voice-style">{{ voice.style_instruction[:150] }}{% if voice.style_instruction|length > 150 %}...{% endif %}</p>
-                            <p class="voice-meta">Created: {{ voice.created_at.strftime('%b %d, %Y') }}</p>
-                        </div>
-                        <form action="/admin/voices/{{ voice._id }}/delete" method="post" class="voice-actions"
-                            onsubmit="return confirm('Delete voice {{ voice.name }}? This cannot be undone.');">
-                            <button type="submit" class="btn btn-danger btn-small">Delete</button>
-                        </form>
-                    </div>
-                    {% endfor %}
-                </div>
-                {% else %}
-                <p class="empty-note">No voices created yet.</p>
-                {% endif %}
-
-                <!-- Create Voice Form -->
-                <div class="create-voice-section">
-                    <h3>Create New Voice</h3>
-                    <form action="/admin/voices/create" method="post" enctype="multipart/form-data" class="form">
-                        <div class="form-group">
-                            <label for="name">Voice Name</label>
-                            <input type="text" name="name" id="name" required
-                                placeholder="e.g., Terence McKenna">
-                        </div>
-
-                        <div class="form-group">
-                            <label for="reference_audio">Reference Audio</label>
-                            <input type="file" name="reference_audio" id="reference_audio" required
-                                accept="audio/wav,audio/mpeg,audio/mp3,.wav,.mp3">
-                            <small class="help-text">
-                                Upload 10-20 seconds of clear speech. WAV or MP3 format, mono, 24kHz+ sample rate.
-                                Avoid background noise, music, or long pauses.
-                            </small>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="reference_text">Reference Text (Transcript)</label>
-                            <textarea name="reference_text" id="reference_text" rows="4" required
-                                placeholder="Type the exact words spoken in the reference audio..."></textarea>
-                            <small class="help-text">Accurate transcript of the reference audio improves voice cloning quality.</small>
-                        </div>
-
-                        <div class="form-group">
-                            <label for="style_instruction">TTS Style Instruction</label>
-                            <textarea name="style_instruction" id="style_instruction" rows="6" required
-                                placeholder="e.g., 'Speak thoughtfully with occasional pauses for emphasis, warm and contemplative tone' or 'Energetic delivery with varied pacing'"></textarea>
-                            <small class="help-text">Passed to qwen3-tts to control speech delivery style (pacing, emotion, emphasis). This is the default for this voice.</small>
-                        </div>
-
-                        <button type="submit" class="btn btn-primary">Create Voice</button>
-                    </form>
-                </div>
-            </section>
+            {% include "admin_voices.html" %}
             {% endif %}
         </main>
     </div>
@@ -212,24 +162,19 @@
         const chunkMinutesInput = document.getElementById('chunk_minutes');
 
         function syncTargetMinutesLabel() {
-            if (!targetMinutesInput || !targetMinutesValue) return;
-            targetMinutesValue.textContent = targetMinutesInput.value;
+            if (targetMinutesInput && targetMinutesValue) targetMinutesValue.textContent = targetMinutesInput.value;
         }
-
         function syncChunkControls() {
             if (!generateInChunks || !chunkMinutesGroup || !chunkMinutesInput) return;
-            const enabled = generateInChunks.checked;
-            chunkMinutesInput.disabled = !enabled;
-            chunkMinutesGroup.classList.toggle('disabled', !enabled);
+            chunkMinutesInput.disabled = !generateInChunks.checked;
+            chunkMinutesGroup.classList.toggle('disabled', !generateInChunks.checked);
         }
-
         targetMinutesInput?.addEventListener('input', syncTargetMinutesLabel);
         generateInChunks?.addEventListener('change', syncChunkControls);
         syncTargetMinutesLabel();
         syncChunkControls();
 
-        // Show loading state on generate form submit
-        document.getElementById('generate-form')?.addEventListener('submit', function() {
+        document.getElementById('generate-form')?.addEventListener('submit', function () {
             const btn = document.getElementById('generate-btn');
             btn.querySelector('.btn-text').style.display = 'none';
             btn.querySelector('.btn-loading').style.display = 'inline';

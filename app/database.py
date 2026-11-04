@@ -39,6 +39,7 @@ class Database:
         # Broadcasts collection indexes
         await cls.db.broadcasts.create_index("created_at")
         await cls.db.broadcasts.create_index("voice_id")
+        await cls.db.broadcasts.create_index("kind")
 
         logger.info("Database indexes created")
 

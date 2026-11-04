@@ -22,7 +22,7 @@
                 <article class="broadcast-card" data-id="{{ broadcast._id }}">
                     <div class="broadcast-header" onclick="toggleBroadcast('{{ broadcast._id }}')">
                         <div class="broadcast-info">
-                            <h2 class="broadcast-title">{{ broadcast.title }}</h2>
+                            <h2 class="broadcast-title">{% if broadcast.kind == 'daily' %}<span class="badge-daily">Morning Broadcast</span>{% endif %}{{ broadcast.title }}</h2>
                             <div class="broadcast-meta">
                                 <span class="voice-name">{{ broadcast.voice_name }}</span>
                                 <span class="separator">|</span>
@@ -40,7 +40,7 @@
                     <div class="broadcast-content" id="content-{{ broadcast._id }}">
                         <div class="audio-player">
                             <audio controls preload="none">
-                                <source src="/audio/{{ broadcast.audio_filename }}" type="audio/wav">
+                                <source src="/audio/{{ broadcast.audio_filename }}" type="{{ audio_mime(broadcast.audio_filename) }}">
                                 Your browser does not support the audio element.
                             </audio>
                         </div>

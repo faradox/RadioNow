@@ -1,0 +1,112 @@
+<section class="tab-content">
+    <h2>Manage Voices</h2>
+
+    {% if voices %}
+    <div class="voices-list">
+        {% for voice in voices %}
+        <div class="voice-card voice-card-stacked">
+            <div class="voice-card-top">
+                <div class="voice-info">
+                    <h3 class="voice-name">{{ voice.name }}</h3>
+                    <p class="voice-meta">
+                        Engine: {{ voice.engine }}{% if voice.minimax_voice_id %} | MiniMax id cloned{% endif %}
+                        | Persona: {% if voice.persona %}custom{% elif voice.builtin_persona %}built-in{% else %}none{% endif %}
+                        | Created {{ voice.created_at.strftime('%b %d, %Y') }}
+                    </p>
+                </div>
+                <form action="/admin/voices/{{ voice._id }}/delete" method="post" class="voice-actions"
+                    onsubmit="return confirm('Delete voice {{ voice.name }}? This cannot be undone.');">
+                    <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                </form>
+            </div>
+
+            <details class="script-details">
+                <summary>Edit</summary>
+                <form action="/admin/voices/{{ voice._id }}/update" method="post" enctype="multipart/form-data" class="form">
+                    <div class="form-group">
+                        <label>TTS Engine</label>
+                        <select name="tts_engine">
+                            {% for key, label in engines.items() %}
+                            <option value="{{ key }}" {% if key == voice.engine %}selected{% endif %}>{{ label }}</option>
+                            {% endfor %}
+                        </select>
+                    </div>
+                    <div class="form-group">
+                        <label>Writing Persona</label>
+                        <textarea name="persona" rows="8"
+                            placeholder="{{ voice.builtin_persona or 'How this host thinks, talks and jokes. Used by the script LLM.' }}">{{ voice.persona or '' }}</textarea>
+                        <small class="help-text">Leave empty to use the built-in persona (shown as placeholder) if there is one.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Replace Reference Audio (optional)</label>
+                        <input type="file" name="reference_audio" accept="audio/wav,audio/mpeg,.wav,.mp3">
+                        <small class="help-text">Replacing it also re-clones the MiniMax voice on next use. Update the transcript to match.</small>
+                    </div>
+                    <div class="form-group">
+                        <label>Reference Text (Transcript)</label>
+                        <textarea name="reference_text" rows="3" required>{{ voice.reference_text }}</textarea>
+                    </div>
+                    <div class="form-group">
+                        <label>TTS Style Instruction (Qwen3)</label>
+                        <textarea name="style_instruction" rows="3" required>{{ voice.style_instruction }}</textarea>
+                    </div>
+                    <button type="submit" class="btn btn-primary btn-small">Save</button>
+                </form>
+            </details>
+        </div>
+        {% endfor %}
+    </div>
+    {% else %}
+    <p class="empty-note">No voices created yet.</p>
+    {% endif %}
+
+    <div class="create-voice-section">
+        <h3>Create New Voice</h3>
+        <form action="/admin/voices/create" method="post" enctype="multipart/form-data" class="form">
+            <div class="form-group">
+                <label for="name">Voice Name</label>
+                <input type="text" name="name" id="name" required placeholder="e.g., Terence McKenna">
+                <small class="help-text">Names containing Watts, McKenna or Ram Dass get a built-in writing persona.</small>
+            </div>
+
+            <div class="form-group">
+                <label for="reference_audio">Reference Audio</label>
+                <input type="file" name="reference_audio" id="reference_audio" required accept="audio/wav,audio/mpeg,audio/mp3,.wav,.mp3">
+                <small class="help-text">
+                    About 10 seconds of the cleanest speech you can find: one continuous thought,
+                    no music, applause, room echo or tape hiss. Pick a passage in the tone you want
+                    the broadcasts to have. Longer clips do not help zero-shot cloning.
+                </small>
+            </div>
+
+            <div class="form-group">
+                <label for="reference_text">Reference Text (Transcript)</label>
+                <textarea name="reference_text" id="reference_text" rows="4" required
+                    placeholder="Type the exact words spoken in the reference audio, including ums..."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="tts_engine_new">TTS Engine</label>
+                <select name="tts_engine" id="tts_engine_new">
+                    {% for key, label in engines.items() %}
+                    <option value="{{ key }}">{{ label }}</option>
+                    {% endfor %}
+                </select>
+            </div>
+
+            <div class="form-group">
+                <label for="persona_new">Writing Persona (optional)</label>
+                <textarea name="persona" id="persona_new" rows="5"
+                    placeholder="How this host thinks, talks and jokes. Leave empty for the built-in one."></textarea>
+            </div>
+
+            <div class="form-group">
+                <label for="style_instruction">TTS Style Instruction (Qwen3)</label>
+                <textarea name="style_instruction" id="style_instruction" rows="4" required
+                    placeholder="e.g. 'Warm, unhurried, amused, with pauses for emphasis'"></textarea>
+            </div>
+
+            <button type="submit" class="btn btn-primary">Create Voice</button>
+        </form>
+    </div>
+</section>
