@@ -2,6 +2,7 @@ import asyncio
 import logging
 import mimetypes
 import os
+import subprocess
 from contextlib import asynccontextmanager, suppress
 from datetime import datetime
 from pathlib import Path
@@ -9,7 +10,7 @@ from urllib.parse import quote
 
 from bson import ObjectId
 from fastapi import FastAPI, File, Form, HTTPException, Request, UploadFile
-from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse, Response
 from fastapi.staticfiles import StaticFiles
 from fastapi.templating import Jinja2Templates
 from slugify import slugify
@@ -224,6 +225,45 @@ async def generate_broadcast(
     except Exception as e:
         logger.exception("Failed to generate broadcast")
         return redirect("generate", error=f"Generation failed: {e}")
+
+
+def _wav_to_mp3(source: Path) -> bytes:
+    result = subprocess.run(
+        ["ffmpeg", "-hide_banner", "-loglevel", "error", "-i", str(source),
+         "-c:a", "libmp3lame", "-b:a", "192k", "-f", "mp3", "pipe:1"],
+        capture_output=True,
+        check=False,
+    )
+    if result.returncode != 0 or not result.stdout:
+        raise RuntimeError(result.stderr.decode(errors="replace")[:300])
+    return result.stdout
+
+
+@app.get("/admin/broadcasts/{broadcast_id}/download")
+async def download_broadcast(broadcast_id: str):
+    """Download a broadcast as MP3 (older WAV episodes are converted)."""
+    if not ObjectId.is_valid(broadcast_id):
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    broadcast = await get_broadcasts_collection().find_one({"_id": ObjectId(broadcast_id)})
+    if not broadcast or not broadcast.get("audio_filename"):
+        raise HTTPException(status_code=404, detail="Broadcast not found")
+    path = AUDIO_DIR / broadcast["audio_filename"]
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+
+    created = broadcast.get("created_at") or datetime.utcnow()
+    name = f"radionow-{created:%Y-%m-%d}-{slugify(broadcast.get('title') or 'broadcast')[:60]}.mp3"
+    if path.suffix.lower() == ".mp3":
+        return FileResponse(path, media_type="audio/mpeg", filename=name)
+    try:
+        data = await asyncio.to_thread(_wav_to_mp3, path)
+    except RuntimeError as e:
+        raise HTTPException(status_code=500, detail=f"MP3 conversion failed: {e}")
+    return Response(
+        content=data,
+        media_type="audio/mpeg",
+        headers={"Content-Disposition": f'attachment; filename="{name}"'},
+    )
 
 
 @app.post("/admin/broadcasts/{broadcast_id}/delete")

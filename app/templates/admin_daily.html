@@ -123,6 +123,10 @@
                 <form action="/admin/daily/runs/{{ run._id }}/retry" method="post" class="recent-actions">
                     <button type="submit" class="btn btn-primary btn-small">Try again</button>
                 </form>
+                {% elif run.status == 'done' and run.broadcast_id %}
+                <div class="recent-actions">
+                    <a href="/admin/broadcasts/{{ run.broadcast_id }}/download" class="btn btn-primary btn-small" download>Download MP3</a>
+                </div>
                 {% endif %}
             </li>
             {% endfor %}

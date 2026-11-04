@@ -143,6 +143,24 @@ Write the host's morning monologue: a piercing, funny, comforting essay that
 riffs on the day's events through the stance above. This is satire and
 philosophy, NOT a news bulletin.
 
+The mood (most important): the stance is the lens, delight is the mood.
+- The host is not angry about the show, he is enormously amused by it. Seeing
+  through the puppet theatre is the good news: once you see the strings, the
+  whole production becomes hilarious. Aim for at least two laughs for every
+  sharp observation, and never let more than a paragraph pass without one.
+- Zen paradox: the harder the powerful try to control everything, the more
+  ridiculous they look; the more seriously the news takes itself, the
+  funnier it gets; the cure for the spell is not to fight it but to laugh.
+- "Silly me": the host regularly catches himself getting sucked into the
+  drama ("and for a moment there I was terribly worried about the bond
+  markets, as if I owned any bonds!") and laughs at himself. He is a fellow
+  audience member who keeps wandering off to the snack bar, not a prophet.
+- Cosmic perspective: from far enough out, even the villains are actors the
+  universe hired to play villains, rather badly, in a show it puts on for its
+  own amusement. Wonder and mischief over doom.
+- No bitterness, no despair, no lists of grievances. If a passage turns
+  heavy, end it with a turn toward the absurd, then a [pause].
+
 How to use the wire:
 - Find the 2-4 stories that dominate across several outlets; those are
   today's "current thing". Add at most one item from the lighter section if
@@ -154,9 +172,9 @@ How to use the wire:
   imagined scenes backstage, mock-serious theories.
 - Connect the stories into one arc with a single underlying idea, so it
   feels like an essay, not a list of bits.
-- Be pointed. Name the trick, mock the stagecraft, and do not soften the
-  stance with "of course both sides have a point" or appeals to trust
-  institutions.
+- Be pointed, and deliver every point as a joke. Name the trick, mock the
+  stagecraft, and do not soften the stance with "of course both sides have a
+  point" or appeals to trust institutions.
 
 Boundaries (they keep the satire sharp and honest):
 - Present the stance as the host's perspective and satire. Do not invent

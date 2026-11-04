@@ -81,11 +81,18 @@ def frame_db(samples: np.ndarray) -> tuple[np.ndarray, int]:
 
 
 def silent_frames(db: np.ndarray) -> np.ndarray:
-    """Frames well below the speech level count as silence."""
+    """Frames that hold no speech, only silence or background noise.
+
+    Adapts to the take: on clean audio silence is 30 dB under the speech; on
+    vintage-sounding takes (hiss, crackle only ~25 dB under the speech) frames
+    within 10 dB of the noise floor count as silence.
+    """
     if not db.size:
         return np.array([], dtype=bool)
     speech_level = float(np.percentile(db, 90))
-    return db < max(-55.0, speech_level - 30.0)
+    noise_floor = float(np.percentile(db, 3))
+    threshold = min(speech_level - 20.0, max(noise_floor + 10.0, speech_level - 30.0))
+    return db < max(-60.0, threshold)
 
 
 def _fade(samples: np.ndarray, fade_in: float, fade_out: float) -> np.ndarray:
@@ -147,6 +154,61 @@ def join(parts: list[np.ndarray], pauses: list[float]) -> np.ndarray:
         if idx < len(parts) - 1:
             out.append(silence(pauses[idx]))
     return np.concatenate(out) if out else silence(0)
+
+
+# ---------------------------------------------------------------------------
+# Room tone: keep a voice's background texture (tape hiss, crackle) going
+# through the pauses we insert, so breaks don't drop into digital silence.
+# ---------------------------------------------------------------------------
+
+DIGITAL_SILENCE_DB = -80.0
+MIN_ROOM_TONE_SECONDS = 0.25
+
+
+def extract_room_tone(samples: np.ndarray) -> np.ndarray:
+    """Collect the background-only frames of a raw (untrimmed) take."""
+    db, n = frame_db(samples)
+    if not db.size:
+        return silence(0)
+    quiet = silent_frames(db) & (db > DIGITAL_SILENCE_DB)
+    # Skip frames right next to speech (breaths, word tails).
+    padded = np.convolve((~quiet).astype(int), np.ones(7, dtype=int), mode="same") == 0
+    frames = np.flatnonzero(quiet & padded)
+    if not frames.size:
+        return silence(0)
+    return np.concatenate([samples[i * n : (i + 1) * n] for i in frames])
+
+
+def room_tone_bed(tone: np.ndarray, length: int, seed: int = 0) -> np.ndarray:
+    """A seamless bed of `length` samples from random grains of `tone`.
+
+    Hann-windowed grains at 50% overlap sum to unity gain, so the texture
+    keeps the source level without audible loop points.
+    """
+    grain = min(len(tone), int(0.4 * SAMPLE_RATE))
+    if grain < int(0.05 * SAMPLE_RATE) or length <= 0:
+        return np.zeros(max(0, length), dtype=np.float32)
+    hop = grain // 2
+    window = np.hanning(grain + 1)[:-1].astype(np.float32)  # periodic Hann
+    rng = np.random.default_rng(seed)
+    bed = np.zeros(length + grain, dtype=np.float32)
+    for start in range(0, length, hop):
+        offset = int(rng.integers(0, len(tone) - grain + 1))
+        bed[start : start + grain] += tone[offset : offset + grain] * window
+    return bed[:length]
+
+
+def fill_silence(samples: np.ndarray, tone: np.ndarray, ramp: float = 0.03) -> np.ndarray:
+    """Lay room tone wherever the track is digitally silent, with soft ramps."""
+    if len(tone) < MIN_ROOM_TONE_SECONDS * SAMPLE_RATE:
+        return samples
+    db, n = frame_db(samples)
+    gate = (db < DIGITAL_SILENCE_DB).astype(np.float32)
+    width = max(1, int(ramp / FRAME_SECONDS))
+    gate = np.convolve(gate, np.ones(width, dtype=np.float32) / width, mode="same")
+    gate = np.repeat(gate, n)
+    gate = np.pad(gate, (0, max(0, len(samples) - len(gate))), mode="edge")[: len(samples)]
+    return samples + room_tone_bed(tone, len(samples)) * gate
 
 
 # ---------------------------------------------------------------------------

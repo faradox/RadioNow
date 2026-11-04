@@ -129,10 +129,13 @@
                                     <source src="/audio/{{ broadcast.audio_filename }}" type="{{ audio_mime(broadcast.audio_filename) }}">
                                 </audio>
                             </div>
-                            <form action="/admin/broadcasts/{{ broadcast._id }}/delete" method="post" class="recent-actions"
-                                onsubmit="return confirm('Delete broadcast &quot;{{ broadcast.title }}&quot;? This will also remove the audio file.');">
-                                <button type="submit" class="btn btn-danger btn-small">Delete</button>
-                            </form>
+                            <div class="recent-actions action-stack">
+                                <a href="/admin/broadcasts/{{ broadcast._id }}/download" class="btn btn-primary btn-small" download>Download MP3</a>
+                                <form action="/admin/broadcasts/{{ broadcast._id }}/delete" method="post"
+                                    onsubmit="return confirm('Delete broadcast &quot;{{ broadcast.title }}&quot;? This will also remove the audio file.');">
+                                    <button type="submit" class="btn btn-danger btn-small">Delete</button>
+                                </form>
+                            </div>
                         </li>
                         {% endfor %}
                     </ul>

@@ -318,7 +318,10 @@ class VoiceRender:
     speed: float = 1.0
 
 
-def render_segment(seg: Segment, cfg: VoiceRender, tracker: CostTracker) -> np.ndarray:
+def render_segment(
+    seg: Segment, cfg: VoiceRender, tracker: CostTracker
+) -> tuple[np.ndarray, np.ndarray]:
+    """Return (paced segment audio, room tone sampled from the raw take)."""
     text = prepare_text(seg.text, cfg.engine)
     if cfg.engine == "minimax":
         if not cfg.minimax_voice_id:
@@ -331,7 +334,8 @@ def render_segment(seg: Segment, cfg: VoiceRender, tracker: CostTracker) -> np.n
             tracker,
         )
         samples = audio.change_tempo(audio.decode(raw), cfg.speed)
-    return audio.stretch_gaps(audio.trim(samples), cfg.pause_scale)
+    paced = audio.stretch_gaps(audio.trim(samples), cfg.pause_scale)
+    return paced, audio.extract_room_tone(samples)
 
 
 def render_episode(
@@ -350,10 +354,16 @@ def render_episode(
         len(segments), cfg.engine, cfg.pause_scale, cfg.speed,
     )
     with ThreadPoolExecutor(max_workers=PARALLEL_REQUESTS) as pool:
-        parts = list(pool.map(lambda s: render_segment(s, cfg, tracker), segments))
+        rendered = list(pool.map(lambda s: render_segment(s, cfg, tracker), segments))
+    parts = [part for part, _ in rendered]
+    room_tone = np.concatenate([tone for _, tone in rendered])
 
     pauses = [min(MAX_PAUSE_SECONDS, s.pause_after * cfg.pause_scale) for s in segments]
-    voice = audio.loudnorm(audio.join(parts, pauses))
+    # Fill inserted silences with the take's own background before loudnorm,
+    # so breaks keep the recording's texture instead of going dead.
+    voice = audio.fill_silence(audio.join(parts, pauses), room_tone)
+    logger.info("Room tone: %.1fs sampled", len(room_tone) / audio.SAMPLE_RATE)
+    voice = audio.loudnorm(voice)
 
     if jingles:
         intro, outro, voice_delay = pick_jingles()

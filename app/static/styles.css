@@ -711,3 +711,22 @@ audio::-webkit-media-controls-time-remaining-display {
 .run-running {
     color: var(--warning);
 }
+
+.action-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0.5rem;
+}
+
+a.btn {
+    text-decoration: none;
+}
+
+a.btn-primary:hover {
+    color: var(--bg-primary);
+}
+
+.action-stack .btn {
+    width: 100%;
+}
