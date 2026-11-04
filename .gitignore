@@ -25,6 +25,8 @@ Thumbs.db
 # Generated content (mounted volumes)
 audio/
 voices/
+jingles/*
+!jingles/README.md
 
 # Logs
 *.log

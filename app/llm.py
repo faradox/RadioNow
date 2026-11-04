@@ -62,8 +62,13 @@ def resolve_provider(provider: str | None) -> str:
     return default_provider()
 
 
-async def generate_script_json(prompt: str, provider: str | None = None) -> str:
-    """Send a script prompt and return the raw (JSON) text response."""
+async def generate_script_json(
+    prompt: str, provider: str | None = None
+) -> tuple[str, dict]:
+    """Send a script prompt; return (raw JSON text, usage dict).
+
+    usage = {"provider", "model", "input_tokens", "output_tokens"}.
+    """
     provider = resolve_provider(provider)
     logger.info("Generating script with %s", PROVIDERS[provider])
     if provider == "claude":
@@ -71,7 +76,7 @@ async def generate_script_json(prompt: str, provider: str | None = None) -> str:
     return await _gemini_generate(prompt)
 
 
-async def _gemini_generate(prompt: str) -> str:
+async def _gemini_generate(prompt: str) -> tuple[str, dict]:
     global _gemini_client
     if not GEMINI_API_KEY:
         raise RuntimeError("GEMINI_API_KEY is not configured")
@@ -88,10 +93,19 @@ async def _gemini_generate(prompt: str) -> str:
     text = response.text or ""
     if not text.strip():
         raise ValueError("Empty response from Gemini")
-    return text
+    meta = response.usage_metadata
+    usage = {
+        "provider": "gemini",
+        "model": GEMINI_MODEL,
+        "input_tokens": (meta and meta.prompt_token_count) or 0,
+        # Thinking tokens are billed at the output rate.
+        "output_tokens": ((meta and meta.candidates_token_count) or 0)
+        + ((meta and meta.thoughts_token_count) or 0),
+    }
+    return text, usage
 
 
-async def _claude_generate(prompt: str) -> str:
+async def _claude_generate(prompt: str) -> tuple[str, dict]:
     global _claude_client
     if not ANTHROPIC_API_KEY:
         raise RuntimeError("ANTHROPIC_API_KEY is not configured")
@@ -122,4 +136,14 @@ async def _claude_generate(prompt: str) -> str:
     text = "".join(block.text for block in message.content if block.type == "text")
     if not text.strip():
         raise ValueError("Empty response from Claude")
-    return text
+    u = message.usage
+    usage = {
+        "provider": "claude",
+        # The serving model (differs from CLAUDE_MODEL if a fallback ran).
+        "model": message.model or CLAUDE_MODEL,
+        "input_tokens": (u.input_tokens or 0)
+        + (getattr(u, "cache_creation_input_tokens", 0) or 0)
+        + (getattr(u, "cache_read_input_tokens", 0) or 0),
+        "output_tokens": u.output_tokens or 0,
+    }
+    return text, usage

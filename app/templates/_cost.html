@@ -1,0 +1,21 @@
+{% macro cost_badge(cost) -%}
+{% if cost %}
+<details class="cost">
+    <summary>{% if cost.estimated %}~{% endif %}${{ '%.3f' | format(cost.total_usd) }}
+        <span class="muted">(LLM ${{ '%.3f' | format(cost.llm_usd) }} + voice ${{ '%.3f' | format(cost.tts_usd) }})</span>
+    </summary>
+    <ul class="cost-items">
+        {% for item in cost['items'] %}
+        <li>
+            <span>{{ item.kind }} &middot; {{ item.model }} &middot; {{ item.calls }} call{{ 's' if item.calls != 1 }}</span>
+            <span>{% if item.estimated %}~{% endif %}${{ '%.4f' | format(item.usd) }}</span>
+            <span class="muted">{{ item.details | join('; ') }}{% if item.calls > item.details|length %}; ...{% endif %}</span>
+        </li>
+        {% endfor %}
+    </ul>
+    {% if cost.estimated %}<small class="muted">~ = estimated price (unverified rate, or no price configured).</small>{% endif %}
+</details>
+{% else %}
+<span class="muted cost">cost not tracked</span>
+{% endif %}
+{%- endmacro %}

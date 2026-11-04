@@ -9,7 +9,8 @@
                 <div class="voice-info">
                     <h3 class="voice-name">{{ voice.name }}</h3>
                     <p class="voice-meta">
-                        Engine: {{ voice.engine }}{% if voice.minimax_voice_id %} | MiniMax id cloned{% endif %}
+                        Engine: {{ voice.engine }}
+                        | Pacing: pauses x{{ voice.pause_scale or voice.default_pause_scale }}, speed {{ voice.speech_speed or voice.default_speed }}{% if voice.minimax_voice_id %} | MiniMax id cloned{% endif %}
                         | Persona: {% if voice.persona %}custom{% elif voice.builtin_persona %}built-in{% else %}none{% endif %}
                         | Created {{ voice.created_at.strftime('%b %d, %Y') }}
                     </p>
@@ -30,6 +31,20 @@
                             <option value="{{ key }}" {% if key == voice.engine %}selected{% endif %}>{{ label }}</option>
                             {% endfor %}
                         </select>
+                    </div>
+                    <div class="form-row">
+                        <div class="form-group">
+                            <label>Pause Scale</label>
+                            <input type="number" name="pause_scale" min="0.5" max="3" step="0.05"
+                                value="{{ voice.pause_scale or '' }}" placeholder="{{ voice.default_pause_scale }}">
+                            <small class="help-text">Multiplies every pause, natural gaps included. 1 = engine timing. Blank = default.</small>
+                        </div>
+                        <div class="form-group">
+                            <label>Speech Speed</label>
+                            <input type="number" name="speech_speed" min="0.7" max="1.3" step="0.01"
+                                value="{{ voice.speech_speed or '' }}" placeholder="{{ voice.default_speed }}">
+                            <small class="help-text">Below 1 slows the voice itself (pitch kept). Blank = default.</small>
+                        </div>
                     </div>
                     <div class="form-group">
                         <label>Writing Persona</label>

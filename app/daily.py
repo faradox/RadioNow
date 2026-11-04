@@ -25,6 +25,27 @@ STALE_RUN = timedelta(minutes=45)
 CATCHUP_WINDOW = timedelta(hours=6)
 MIN_HEADLINES = 10
 
+DEFAULT_STANCE = """\
+The show sees through the spectacle, and the host speaks from that place:
+- Politics is theatre. Elections, parties, summits and scandals are a stage
+  play for the audience; the costumes and slogans change, the script and the
+  owners of the theatre do not. Left and right are two teams in the same
+  show, and the listener is invited to stop rooting for either.
+- The news is not information but programming. It manufactures "the current
+  thing": what to fear this week, whom to hate, what to argue about. It is
+  shaped by intelligence agencies, PR firms and a handful of media owners,
+  and "official consensus" is part of the costume.
+- Real power sits with a small, unaccountable club of the ultra-rich and
+  their institutions (central banks, arms makers, tech monopolies, the
+  permanent bureaucracy) that needs the 99% distracted, anxious and divided.
+- Read every headline as a scene in that play: ask what it is distracting
+  from, who profits when the audience feels this way, and what the stage
+  managers would rather nobody noticed.
+- The host's mission is to wake the listener up gently: to break the spell
+  with laughter, hand them back their attention (the one thing the system
+  cannot run without) and remind them that the real world is the one in
+  front of their nose, which is still astonishing."""
+
 DEFAULT_SETTINGS = {
     "enabled": os.getenv("DAILY_ENABLED", "true").lower() in ("1", "true", "yes"),
     "time": os.getenv("DAILY_TIME", "06:00"),
@@ -32,6 +53,8 @@ DEFAULT_SETTINGS = {
     "llm_provider": "",
     "tts_engine": "",
     "target_minutes": 5,
+    "jingles": True,
+    "stance": "",
 }
 
 _background_tasks: set[asyncio.Task] = set()
@@ -82,10 +105,16 @@ def host_for_day(hosts: list[dict], day: date) -> dict:
 
 
 def build_daily_prompt(
-    voice: dict, day: date, wire: str, target_minutes: int, cues_supported: bool
+    voice: dict,
+    day: date,
+    wire: str,
+    target_minutes: int,
+    cues_supported: bool,
+    stance: str | None = None,
 ) -> str:
     persona = persona_for_voice(voice) or f"{voice['name']}, a warm and witty host."
     weekday = day.strftime("%A, %B %-d, %Y")
+    stance = (stance or "").strip() or DEFAULT_STANCE
     return f"""You are writing the 6 AM edition of "Radio Now: The Morning \
 Broadcast", spoken by one host. Listeners are just waking up, still in bed or \
 making coffee. It is {weekday}.
@@ -94,46 +123,50 @@ HOST (write entirely in this person's voice and way of thinking; capture the
 style, never quote or recycle their famous lines):
 {persona}
 
-Below is this morning's raw news wire from several international outlets. It
-is source material, not a script.
+EDITORIAL STANCE (the lens of the whole show; let it cut through every
+segment, in the host's own idiom, with wit rather than ranting):
+{stance}
+
+Below is this morning's raw news wire from several mainstream outlets. It is
+source material, i.e. the official script of today's play, not the truth.
 
 {wire}
 
 YOUR TASK:
-Write the host's morning monologue: a comforting, funny, gently sarcastic
-essay that riffs on the day's events. This is satire and philosophy, NOT a
-news bulletin.
+Write the host's morning monologue: a piercing, funny, comforting essay that
+riffs on the day's events through the stance above. This is satire and
+philosophy, NOT a news bulletin.
 
 How to use the wire:
-- Find the 2-4 stories that dominate across several outlets; those are the
-  day's big themes. Add at most one item from the lighter section if it is
-  delightful.
-- Never summarise or "read out" the news. Mention each real event in a
-  single light sentence at most, just enough for the listener to recognise
-  it, then spin it into something new: a parable, a cosmic reinterpretation,
-  an absurd "what is really going on here", an imagined scene behind closed
-  doors, a mock-serious theory, a conversation with the universe about it.
+- Find the 2-4 stories that dominate across several outlets; those are
+  today's "current thing". Add at most one item from the lighter section if
+  it is delightful.
+- Never summarise or "read out" the news. Mention each real event in a single
+  light sentence at most, just enough for the listener to recognise it, then
+  pull back the curtain: what is the show really about, who is in the
+  audience, who sells the tickets? Use parables, mock-cosmic interpretations,
+  imagined scenes backstage, mock-serious theories.
 - Connect the stories into one arc with a single underlying idea, so it
   feels like an essay, not a list of bits.
-- Invented material must be unmistakably invented (absurd, playful, framed
-  as imagination). Never state made-up facts, quotes or numbers as if real.
+- Be pointed. Name the trick, mock the stagecraft, and do not soften the
+  stance with "of course both sides have a point" or appeals to trust
+  institutions.
 
-Tone and boundaries:
-- Wholesome, warm, comedic, a little sarcastic. The listener should finish
-  lighter and smiling, never anxious.
-- Laugh at the powerful, the pompous, bureaucracy, markets, tech hype,
-  self-importance and the news cycle itself. Never at victims, the poor,
-  the sick, or ordinary people having a hard day.
-- Wars, attacks, disasters, deaths and crimes: do not describe them, give no
-  numbers or details, and never joke about suffering. Prefer to leave them
-  out. If one dominates every outlet, you may acknowledge it in one tender
-  sentence and move on.
-- Not partisan. Satire of politicians is fine; telling listeners whom to
-  support is not.
+Boundaries (they keep the satire sharp and honest):
+- Present the stance as the host's perspective and satire. Do not invent
+  specific facts (fake quotes, documents, numbers or secret operations) and
+  state them as real; invented material must be unmistakably playful.
+- Mock institutions, roles, public behaviour and power. Do not accuse named
+  real people of specific crimes.
+- Never laugh at victims, the poor, the sick or ordinary people. Wars,
+  attacks, disasters, deaths and crimes: no descriptions, no numbers, no
+  jokes about suffering. Leave them out or acknowledge them in one tender
+  sentence, which may note who profits from the fear.
 - Do not open with "Good morning" plus a weather report, and avoid cliches
   like "buckle up". Open with a hook in the host's own manner.
-- End by sending the listener into the day: a small invitation, a practical
-  absurdity, a breath, a laugh.
+- End by sending the listener into the day free, awake and amused rather
+  than angry or paranoid: a small invitation, a practical absurdity, a
+  breath, a laugh.
 
 REQUIREMENTS:
 {length_requirements(target_minutes)}
@@ -196,7 +229,12 @@ async def run_daily(day: date, force: bool = False) -> None:
         engine = engine_for_voice(voice, settings.get("tts_engine") or None)
         minutes = int(settings.get("target_minutes") or 5)
         prompt = build_daily_prompt(
-            voice, day, format_headlines(headlines), minutes, engine_supports_cues(engine)
+            voice,
+            day,
+            format_headlines(headlines),
+            minutes,
+            engine_supports_cues(engine),
+            settings.get("stance"),
         )
         doc = await create_broadcast(
             voice,
@@ -204,7 +242,7 @@ async def run_daily(day: date, force: bool = False) -> None:
             input_text=f"Morning broadcast for {day_key}",
             llm_provider=settings.get("llm_provider") or None,
             tts_engine=engine,
-            chunk_minutes=None if engine == "minimax" else 1.0,
+            jingles=bool(settings.get("jingles", True)),
             extra_fields={"kind": "daily", "daily_date": day_key},
         )
         await runs_coll().update_one(
@@ -219,6 +257,7 @@ async def run_daily(day: date, force: bool = False) -> None:
                     "voice_name": voice["name"],
                     "llm_provider": doc["llm_provider"],
                     "tts_engine": doc["tts_engine"],
+                    "cost": doc["cost"],
                     "headlines": [h.as_dict() for h in headlines],
                 }
             },

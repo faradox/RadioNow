@@ -14,7 +14,7 @@ build:
 
 init:
 	@echo "Ensuring local data directories exist..."
-	@mkdir -p audio voices
+	@mkdir -p audio voices jingles
 	@echo "Ensuring Docker network exists: $(DOCKER_NETWORK_NAME)"
 	@docker network inspect $(DOCKER_NETWORK_NAME) >/dev/null 2>&1 || docker network create $(DOCKER_NETWORK_NAME)
 

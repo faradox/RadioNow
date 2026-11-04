@@ -15,8 +15,15 @@ AI-powered audio broadcast generator with voice cloning.
   from public RSS feeds and the day's host (rotating) turns them into a
   comforting, satirical monologue. Settings and run history under
   `/admin?tab=daily`.
+- Real timing: scripts mark beats with [pause] / [long pause]; each piece is
+  rendered separately and joined with exact silences, natural gaps are
+  stretched per voice (pause scale, speech speed in the Voices tab).
+- Singing bowl intro/outro: synthesized per episode (random pentatonic bowls,
+  rendered until fully silent), or recordings dropped into `jingles/`.
+- Per-episode cost (LLM tokens + Replicate usage) in the admin panel; prices in
+  `app/costs.py`, Replicate rates overridable via `RADIONOW_REPLICATE_PRICES`.
+- Daily editorial stance editable in the Daily tab.
 - Configure target script length from the admin panel.
-- Optionally generate TTS in paragraph-aligned chunks and stitch with silence.
 - Auto-generate and store teaser summaries per broadcast.
 - Public listing page with inline audio playback and script view.
 
@@ -91,7 +98,10 @@ radionow/
 │   ├── broadcasts.py    # script -> speech -> stored broadcast pipeline
 │   ├── generator.py     # prompts, response parsing, file helpers
 │   ├── llm.py           # Gemini / Claude providers
-│   ├── tts.py           # Replicate TTS engines, chunking, ffmpeg assembly
+│   ├── tts.py           # Replicate TTS engines, segmenting, episode rendering
+│   ├── audio.py         # numpy/ffmpeg PCM: pacing, loudness, mixing, MP3
+│   ├── bowls.py         # singing bowl synthesis / jingle recordings
+│   ├── costs.py         # LLM + Replicate pricing, per-episode cost tracking
 │   ├── daily.py         # morning broadcast prompt, runs, scheduler
 │   ├── news.py          # RSS/Atom headline fetching
 │   ├── personas.py      # built-in host writing personas
@@ -101,6 +111,7 @@ radionow/
 │   └── static/
 ├── audio/               # Generated broadcast audio (volume)
 ├── voices/              # Uploaded voice reference audio (volume)
+├── jingles/             # Optional singing bowl recordings (volume, read-only)
 ├── docker-compose.yml
 ├── Dockerfile
 ├── Makefile

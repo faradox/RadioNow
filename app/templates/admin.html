@@ -9,6 +9,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
 </head>
+{% from "_cost.html" import cost_badge %}
 <body class="admin-body">
     <div class="container admin-container">
         <header class="header">
@@ -89,19 +90,14 @@
                     </div>
 
                     <div class="form-group">
-                        <label class="checkbox-label" for="generate_in_chunks">
-                            <input type="checkbox" name="generate_in_chunks" id="generate_in_chunks" checked>
-                            Generate in chunks
+                        <label class="checkbox-label" for="jingles">
+                            <input type="checkbox" name="jingles" id="jingles" checked>
+                            Singing bowl intro and outro
                         </label>
                         <small class="help-text">
-                            Paragraph-aligned TTS chunks joined with short gaps. Qwen3 drifts on long
-                            texts, so keep this on there; MiniMax handles a whole script per request.
+                            The script is rendered in segments at its [pause] marks, so the host's
+                            timing is real; pacing per voice is set in the Voices tab.
                         </small>
-                    </div>
-
-                    <div class="form-group" id="chunk-minutes-group">
-                        <label for="chunk_minutes">Approx. chunk length (minutes)</label>
-                        <input type="number" name="chunk_minutes" id="chunk_minutes" min="0.25" max="10" step="0.25" value="1">
                     </div>
 
                     <div class="form-group">
@@ -119,7 +115,7 @@
 
                 {% if recent_broadcasts %}
                 <div class="recent-section">
-                    <h3>Recent Broadcasts</h3>
+                    <h3>Recent Broadcasts <span class="muted">(total shown: ${{ '%.2f' | format(recent_total_usd) }})</span></h3>
                     <ul class="recent-list">
                         {% for broadcast in recent_broadcasts %}
                         <li class="recent-item">
@@ -128,6 +124,7 @@
                                 <span class="recent-meta">
                                     {{ broadcast.voice_name }} | {{ format_duration(broadcast.duration_seconds) }} | {{ broadcast.created_at.strftime('%b %d') }}{% if broadcast.llm_provider %} | {{ broadcast.llm_provider }}/{{ broadcast.tts_engine }}{% endif %}{% if broadcast.kind == 'daily' %} | daily{% endif %}
                                 </span>
+                                {{ cost_badge(broadcast.cost) }}
                                 <audio controls preload="none" class="recent-audio">
                                     <source src="/audio/{{ broadcast.audio_filename }}" type="{{ audio_mime(broadcast.audio_filename) }}">
                                 </audio>
@@ -157,22 +154,11 @@
     <script>
         const targetMinutesInput = document.getElementById('target_minutes');
         const targetMinutesValue = document.getElementById('target-minutes-value');
-        const generateInChunks = document.getElementById('generate_in_chunks');
-        const chunkMinutesGroup = document.getElementById('chunk-minutes-group');
-        const chunkMinutesInput = document.getElementById('chunk_minutes');
-
         function syncTargetMinutesLabel() {
             if (targetMinutesInput && targetMinutesValue) targetMinutesValue.textContent = targetMinutesInput.value;
         }
-        function syncChunkControls() {
-            if (!generateInChunks || !chunkMinutesGroup || !chunkMinutesInput) return;
-            chunkMinutesInput.disabled = !generateInChunks.checked;
-            chunkMinutesGroup.classList.toggle('disabled', !generateInChunks.checked);
-        }
         targetMinutesInput?.addEventListener('input', syncTargetMinutesLabel);
-        generateInChunks?.addEventListener('change', syncChunkControls);
         syncTargetMinutesLabel();
-        syncChunkControls();
 
         document.getElementById('generate-form')?.addEventListener('submit', function () {
             const btn = document.getElementById('generate-btn');

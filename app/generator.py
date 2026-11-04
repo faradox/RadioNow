@@ -12,7 +12,6 @@ from wave import Error as WaveError, open as wave_open
 from mutagen import File as MutagenFile
 
 from app.llm import generate_script_json
-from app.tts import estimate_words_for_minutes
 
 logger = logging.getLogger("radionow.generator")
 
@@ -31,9 +30,13 @@ AUDIO_DIR.mkdir(parents=True, exist_ok=True)
 # ---------------------------------------------------------------------------
 
 
+# Words per spoken minute, counting the pauses the hosts take.
+PROMPT_WPM = 130
+
+
 def length_requirements(target_minutes: int) -> str:
     minutes = max(1, min(int(target_minutes), 20))
-    words = estimate_words_for_minutes(minutes)
+    words = minutes * PROMPT_WPM
     low, high = int(words * 0.85), int(words * 1.15)
     return (
         f"- Spoken length: about {minutes} minutes, i.e. {low}-{high} words. "
@@ -53,8 +56,16 @@ def speech_rules(cues_supported: bool) -> str:
 - This will be read aloud by a voice clone, so write for the ear: spoken
   English, contractions, varied sentence length, natural asides and the small
   verbal habits of the speaker. No lists, headings, markdown or emojis.
-- Use commas, ellipses and dashes for pauses and rhythm. Separate thoughts into
-  paragraphs with a blank line; each paragraph is one breath of thought.
+- Separate thoughts into paragraphs with a blank line; each paragraph is one
+  movement of thought.
+- TIMING IS HALF THE ART. Mark silences explicitly: write [pause] (a beat)
+  or [long pause] (letting something sink in) in the text. Put a [pause]
+  after a punchline, before a reveal, after a rhetorical question, and
+  wherever the speaker would stop to let the listener catch up; one to three
+  per paragraph. Use [long pause] a few times per episode, after the big
+  ideas. Build-ups can run long; the line that lands should be short and be
+  followed by a pause. Also use commas, ellipses and dashes for smaller
+  hesitations.
 - Write numbers, dates and abbreviations the way they would be said aloud.
 - No speaker labels, no meta-commentary, nothing that is not spoken.
 {cue_rule}"""
@@ -102,12 +113,17 @@ REQUIREMENTS:
 {OUTPUT_FORMAT}"""
 
 
-async def generate_script(prompt: str, provider: str | None) -> tuple[str, str, str]:
-    """Run a script prompt through the chosen LLM; return (title, script, summary)."""
-    raw = await generate_script_json(prompt, provider)
+async def generate_script(
+    prompt: str, provider: str | None
+) -> tuple[str, str, str, dict]:
+    """Run a script prompt; return (title, script, summary, usage).
+
+    The script keeps its [pause] markers; strip them for display.
+    """
+    raw, usage = await generate_script_json(prompt, provider)
     title, script, summary = parse_script_response(raw)
     logger.info("Generated script: %s (%d chars)", title, len(script))
-    return title, script, summary
+    return title, script, summary, usage
 
 
 # ---------------------------------------------------------------------------

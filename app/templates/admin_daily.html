@@ -1,3 +1,4 @@
+{% from "_cost.html" import cost_badge %}
 <section class="tab-content">
     <h2>Daily Morning Broadcast</h2>
     <p class="help-text" style="margin-bottom: 1.25rem;">
@@ -49,6 +50,22 @@
         </div>
 
         <div class="form-group">
+            <label class="checkbox-label" for="daily_jingles">
+                <input type="checkbox" name="jingles" id="daily_jingles" {% if settings.jingles %}checked{% endif %}>
+                Singing bowl intro and outro
+            </label>
+        </div>
+
+        <div class="form-group">
+            <label for="stance">Editorial Stance</label>
+            <textarea name="stance" id="stance" rows="16">{{ settings.stance or default_stance }}</textarea>
+            <small class="help-text">
+                The lens every morning script is written through. Clear the box and save to go back
+                to the built-in default.
+            </small>
+        </div>
+
+        <div class="form-group">
             <label>Hosts in rotation</label>
             {% for voice in voices %}
             <label class="checkbox-label">
@@ -83,6 +100,7 @@
                     <span class="recent-meta">
                         {{ run.status }} | attempt {{ run.attempts }}{% if run.voice_name %} | {{ run.voice_name }}{% endif %}{% if run.llm_provider %} | {{ run.llm_provider }}/{{ run.tts_engine }}{% endif %}
                     </span>
+                    {% if run.cost %}{{ cost_badge(run.cost) }}{% endif %}
                     {% if run.error %}<span class="run-error">{{ run.error }}</span>{% endif %}
                     {% if run.headlines %}
                     <details class="script-details">

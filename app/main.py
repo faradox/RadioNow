@@ -25,7 +25,7 @@ from app.generator import (
     save_voice_audio,
 )
 from app.llm import available_providers, default_provider
-from app.personas import builtin_persona_for, persona_for_voice
+from app.personas import builtin_pacing_for, builtin_persona_for, persona_for_voice
 from app.tts import ENGINES, engine_supports_cues, resolve_engine
 
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").upper()
@@ -152,6 +152,7 @@ async def admin(request: Request, tab: str = "generate"):
         doc["_id"] = str(doc["_id"])
         doc["engine"] = engine_for_voice(doc)
         doc["builtin_persona"] = builtin_persona_for(doc["name"]) or ""
+        doc["default_pause_scale"], doc["default_speed"] = builtin_pacing_for(doc["name"])
         voices.append(doc)
 
     context = {
@@ -164,7 +165,11 @@ async def admin(request: Request, tab: str = "generate"):
         "error": request.query_params.get("error"),
     }
     if tab == "generate":
-        context["recent_broadcasts"] = await load_broadcasts(limit=8)
+        recent = await load_broadcasts(limit=30)
+        context["recent_broadcasts"] = recent
+        context["recent_total_usd"] = sum(
+            (b.get("cost") or {}).get("total_usd", 0.0) for b in recent
+        )
     if tab == "daily":
         settings = await daily.get_settings()
         hosts = await daily.host_rotation(settings)
@@ -173,6 +178,7 @@ async def admin(request: Request, tab: str = "generate"):
             rotation=[{"_id": str(h["_id"]), "name": h["name"]} for h in hosts],
             today_host=daily.host_for_day(hosts, daily.today_berlin())["name"] if hosts else None,
             runs=await daily.recent_runs(),
+            default_stance=daily.DEFAULT_STANCE,
         )
     return templates.TemplateResponse(request, "admin.html", context)
 
@@ -184,8 +190,7 @@ async def generate_broadcast(
     twist: str = Form(None),
     style_override: str = Form(None),
     target_minutes: int = Form(4),
-    generate_in_chunks: str | None = Form(None),
-    chunk_minutes: float = Form(1.0),
+    jingles: str | None = Form(None),
     llm_provider: str = Form(""),
     tts_engine: str = Form(""),
 ):
@@ -211,9 +216,7 @@ async def generate_broadcast(
             llm_provider=llm_provider or None,
             tts_engine=engine,
             style_override=style_text,
-            chunk_minutes=(
-                min(max(float(chunk_minutes), 0.25), 10.0) if generate_in_chunks else None
-            ),
+            jingles=jingles is not None,
             extra_fields={"twist": twist_text, "target_minutes": target_minutes},
         )
         return redirect("generate", message=f"Broadcast created: {doc['title']}")
@@ -239,6 +242,14 @@ async def delete_broadcast(broadcast_id: str):
 
 
 # --- Voices ------------------------------------------------------------------
+
+
+def parse_optional_float(value: str, low: float, high: float) -> float | None:
+    """Blank means "use the default"; otherwise clamp to [low, high]."""
+    try:
+        return min(max(float(value), low), high) if value.strip() else None
+    except ValueError:
+        return None
 
 
 @app.post("/admin/voices/create")
@@ -292,6 +303,8 @@ async def update_voice(
     reference_text: str = Form(...),
     persona: str = Form(""),
     tts_engine: str = Form(""),
+    pause_scale: str = Form(""),
+    speech_speed: str = Form(""),
     reference_audio: UploadFile | None = File(None),
 ):
     coll = get_voices_collection()
@@ -304,6 +317,8 @@ async def update_voice(
             "reference_text": reference_text.strip(),
             "persona": persona.strip(),
             "tts_engine": resolve_engine(tts_engine),
+            "pause_scale": parse_optional_float(pause_scale, 0.5, 3.0),
+            "speech_speed": parse_optional_float(speech_speed, 0.7, 1.3),
         }
         unset = {}
         if reference_audio is not None and reference_audio.filename:
@@ -356,6 +371,13 @@ async def update_daily_settings(request: Request):
             "llm_provider": str(form.get("llm_provider", "")),
             "tts_engine": str(form.get("tts_engine", "")),
             "target_minutes": min(max(int(form.get("target_minutes") or 5), 2), 15),
+            "jingles": form.get("jingles") is not None,
+            # Saving the untouched default keeps following future default updates.
+            "stance": (
+                ""
+                if str(form.get("stance", "")).strip() == daily.DEFAULT_STANCE.strip()
+                else str(form.get("stance", "")).strip()
+            ),
         }
     )
     return redirect("daily", message="Daily broadcast settings saved")

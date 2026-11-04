@@ -1,18 +1,26 @@
-"""Text-to-speech engines (Replicate) and audio assembly.
+"""Text-to-speech engines (Replicate) and episode rendering.
 
-Every engine returns arbitrary encoded audio. It is decoded with ffmpeg to raw
-PCM in one common format, stitched with short gaps, then encoded once to a
-loudness-normalized MP3. All functions here are blocking; call them through
-`asyncio.to_thread` from async code.
+The script is split into segments at the LLM's [pause] / [long pause] markers,
+paragraph breaks and (for long passages) sentence boundaries. Each segment is
+synthesized separately, trimmed, and its natural pauses stretched; segments
+are then joined with exact silences. This gives the host real timing instead
+of one breathless read. All functions here are blocking.
 """
 
 import logging
 import os
 import re
-import subprocess
+import urllib.request
+from concurrent.futures import ThreadPoolExecutor
+from dataclasses import dataclass
 from pathlib import Path
 
+import numpy as np
 import replicate
+
+from app import audio
+from app.bowls import pick_jingles
+from app.costs import CostTracker
 
 logger = logging.getLogger("radionow.tts")
 
@@ -29,14 +37,16 @@ ENGINES = {
 }
 DEFAULT_ENGINE = "qwen3"
 
-# Max characters per request, kept under each engine's limit.
-ENGINE_MAX_CHARS = {"qwen3": 4000, "minimax": 9000}
+# Max characters per segment; long paragraphs split on sentences.
+ENGINE_MAX_CHARS = {"qwen3": 900, "minimax": 2500}
+MIN_SEGMENT_WORDS = 2  # short punchlines keep their own beat
+PARALLEL_REQUESTS = 4
 
-SAMPLE_RATE = 44100
-SAMPLE_WIDTH = 2  # 16-bit mono PCM
-CHUNK_GAP_SECONDS = 0.6
-PARAGRAPH_PAUSE_SECONDS = 0.8
+# Base pause lengths in seconds, multiplied by the voice's pause scale.
+PAUSES = {"sentence": 0.45, "pause": 1.1, "paragraph": 1.5, "long pause": 2.4}
+MAX_PAUSE_SECONDS = 4.0
 
+PAUSE_MARKER = re.compile(r"\[(long pause|pause)\]", re.IGNORECASE)
 # Delivery cues the script LLM may emit; only MiniMax renders them as sounds.
 CUE_PATTERN = re.compile(r"\((laughs|chuckles|sighs)\)", re.IGNORECASE)
 
@@ -51,89 +61,31 @@ def engine_supports_cues(engine: str) -> bool:
 
 
 def prepare_text(text: str, engine: str) -> str:
-    """Adapt script text to what the engine understands."""
+    """Adapt segment text to what the engine understands."""
+    text = PAUSE_MARKER.sub(" ", text)
     if engine == "minimax":
         text = CUE_PATTERN.sub(
-            lambda m: "(laughs)" if m.group(1).lower() != "sighs" else "(sighs)",
-            text,
+            lambda m: "(sighs)" if m.group(1).lower() == "sighs" else "(laughs)", text
         )
-        # MiniMax pause marker between paragraphs.
-        return re.sub(r"\n\s*\n+", f" <#{PARAGRAPH_PAUSE_SECONDS}#> ", text.strip())
-    text = re.sub(r"[ \t]*" + CUE_PATTERN.pattern, "", text, flags=re.IGNORECASE)
-    return re.sub(r"[ \t]{2,}", " ", text).strip()
+    else:
+        text = re.sub(r"[ \t]*" + CUE_PATTERN.pattern, "", text, flags=re.IGNORECASE)
+    return re.sub(r"\s{2,}", " ", text).strip()
+
+
+def speakable(text: str) -> str:
+    """Script text as it is spoken (no pause markers), for display/storage."""
+    return re.sub(r"[ \t]{2,}", " ", PAUSE_MARKER.sub("", text)).replace(" \n", "\n")
 
 
 # ---------------------------------------------------------------------------
-# Engines
+# Segmentation
 # ---------------------------------------------------------------------------
 
 
-def _read_output(output) -> bytes:
-    if hasattr(output, "read"):
-        return output.read()
-    if isinstance(output, (list, tuple)) and output and hasattr(output[0], "read"):
-        return output[0].read()
-    raise ValueError(f"Unexpected output format from Replicate: {type(output)}")
-
-
-def synthesize_qwen(
-    text: str,
-    voice_audio_path: Path,
-    reference_text: str,
-    style_instruction: str | None,
-) -> bytes:
-    tts_input = {"mode": "voice_clone", "text": text, "reference_text": reference_text}
-    if style_instruction:
-        tts_input["style_instruction"] = style_instruction
-    with open(voice_audio_path, "rb") as audio_file:
-        tts_input["reference_audio"] = audio_file
-        return _read_output(replicate.run(QWEN_MODEL, input=tts_input))
-
-
-def clone_minimax_voice(voice_audio_path: Path) -> str:
-    """Create a MiniMax cloned voice from the reference audio; return voice_id."""
-    with open(voice_audio_path, "rb") as audio_file:
-        output = replicate.run(
-            MINIMAX_CLONE_MODEL,
-            input={
-                "voice_file": audio_file,
-                "model": MINIMAX_CLONE_TARGET,
-                "need_noise_reduction": True,
-                "need_volume_normalization": True,
-            },
-        )
-    voice_id = output.get("voice_id") if isinstance(output, dict) else None
-    if not voice_id:
-        raise ValueError(f"MiniMax voice cloning returned no voice_id: {output!r}")
-    logger.info("Created MiniMax voice %s", voice_id)
-    return voice_id
-
-
-def synthesize_minimax(text: str, voice_id: str) -> bytes:
-    output = replicate.run(
-        MINIMAX_TTS_MODEL,
-        input={
-            "text": text,
-            "voice_id": voice_id,
-            "emotion": "auto",
-            "sample_rate": 44100,
-            "bitrate": 256000,
-            "channel": "mono",
-            "language_boost": "English",
-            "english_normalization": True,
-        },
-    )
-    return _read_output(output)
-
-
-# ---------------------------------------------------------------------------
-# Chunking
-# ---------------------------------------------------------------------------
-
-
-def estimate_words_for_minutes(minutes: float) -> int:
-    """Estimate words for spoken audio using a moderate speaking pace."""
-    return max(80, int(round(float(minutes) * 150)))
+@dataclass
+class Segment:
+    text: str
+    pause_after: float  # base seconds, before pause scaling
 
 
 def count_words(text: str) -> int:
@@ -145,12 +97,12 @@ def split_paragraphs(script: str) -> list[str]:
     return parts or ([script.strip()] if script.strip() else [])
 
 
-def split_long_paragraph(paragraph: str, max_chars: int) -> list[str]:
-    """Split an oversized paragraph on sentence boundaries."""
-    if len(paragraph) <= max_chars:
-        return [paragraph]
+def split_sentences(text: str, max_chars: int) -> list[str]:
+    """Group sentences into pieces no longer than max_chars."""
+    if len(text) <= max_chars:
+        return [text]
     out, current = [], ""
-    for sentence in re.split(r"(?<=[.!?])\s+", paragraph):
+    for sentence in re.split(r"(?<=[.!?])\s+", text):
         if current and len(current) + len(sentence) + 1 > max_chars:
             out.append(current)
             current = sentence
@@ -161,108 +113,185 @@ def split_long_paragraph(paragraph: str, max_chars: int) -> list[str]:
     return out
 
 
-def chunk_script(script: str, target_words: int | None, max_chars: int) -> list[str]:
-    """Paragraph-aligned chunks near target_words (None = as few as possible)."""
-    paragraphs = []
+def parse_segments(script: str, max_chars: int) -> list[Segment]:
+    segments: list[Segment] = []
     for paragraph in split_paragraphs(script):
-        paragraphs.extend(split_long_paragraph(paragraph, max_chars))
+        parts = PAUSE_MARKER.split(paragraph)  # text, marker, text, marker, ...
+        for i in range(0, len(parts), 2):
+            text = parts[i].strip()
+            marker = parts[i + 1].lower() if i + 1 < len(parts) else None
+            if text:
+                for piece in split_sentences(text, max_chars):
+                    segments.append(Segment(piece, PAUSES["sentence"]))
+                if marker:
+                    segments[-1].pause_after = PAUSES[marker]
+            elif marker and segments:
+                segments[-1].pause_after = max(segments[-1].pause_after, PAUSES[marker])
+        if segments:
+            segments[-1].pause_after = max(segments[-1].pause_after, PAUSES["paragraph"])
 
-    chunks: list[str] = []
-    current: list[str] = []
-    words = chars = 0
-    for paragraph in paragraphs:
-        p_words, p_chars = count_words(paragraph), len(paragraph) + 2
-        over_words = target_words is not None and words + p_words > target_words
-        if current and (over_words or chars + p_chars > max_chars):
-            chunks.append("\n\n".join(current))
-            current, words, chars = [], 0, 0
-        current.append(paragraph)
-        words += p_words
-        chars += p_chars
-    if current:
-        chunks.append("\n\n".join(current))
-    return chunks
+    # Very short segments sound odd on their own: attach them to a neighbour.
+    merged: list[Segment] = []
+    for seg in segments:
+        if (
+            merged
+            and count_words(seg.text) < MIN_SEGMENT_WORDS
+            and len(merged[-1].text) + len(seg.text) < max_chars
+        ):
+            merged[-1].text = f"{merged[-1].text} {seg.text}"
+            merged[-1].pause_after = seg.pause_after
+        else:
+            merged.append(seg)
+    if len(merged) > 1 and count_words(merged[0].text) < MIN_SEGMENT_WORDS:
+        merged[1].text = f"{merged[0].text} {merged[1].text}"
+        merged.pop(0)
+    return merged
 
 
 # ---------------------------------------------------------------------------
-# Audio assembly (ffmpeg)
+# Engines (Replicate predictions, with usage metrics for cost tracking)
 # ---------------------------------------------------------------------------
 
 
-def decode_to_pcm(audio_data: bytes) -> bytes:
-    """Decode any audio container/codec to raw 16-bit mono PCM."""
-    result = subprocess.run(
-        [
-            "ffmpeg", "-hide_banner", "-loglevel", "error",
-            "-i", "pipe:0",
-            "-ac", "1", "-ar", str(SAMPLE_RATE),
-            "-f", "s16le", "-c:a", "pcm_s16le", "pipe:1",
-        ],
-        input=audio_data,
-        capture_output=True,
-        check=False,
+def _download(url: str) -> bytes:
+    with urllib.request.urlopen(url, timeout=120) as response:
+        return response.read()
+
+
+def run_prediction(model: str, inputs: dict):
+    """Run a Replicate prediction; return (output, predict_time seconds)."""
+    prediction = replicate.models.predictions.create(model=model, input=inputs)
+    prediction.wait()
+    if prediction.status != "succeeded":
+        raise RuntimeError(f"{model} {prediction.status}: {prediction.error}")
+    metrics = prediction.metrics or {}
+    return prediction.output, metrics.get("predict_time")
+
+
+def _output_audio(output) -> bytes:
+    if isinstance(output, (list, tuple)) and output:
+        output = output[0]
+    if hasattr(output, "read"):
+        return output.read()
+    if isinstance(output, str) and output.startswith("http"):
+        return _download(output)
+    raise ValueError(f"Unexpected TTS output from Replicate: {type(output)}")
+
+
+def synthesize_qwen(
+    text: str, voice_audio_path: Path, reference_text: str, style: str | None,
+    tracker: CostTracker,
+) -> bytes:
+    inputs = {"mode": "voice_clone", "text": text, "reference_text": reference_text}
+    if style:
+        inputs["style_instruction"] = style
+    with open(voice_audio_path, "rb") as audio_file:
+        inputs["reference_audio"] = audio_file
+        output, predict_time = run_prediction(QWEN_MODEL, inputs)
+    tracker.add_replicate(QWEN_MODEL, "tts", chars=len(text), predict_time=predict_time)
+    return _output_audio(output)
+
+
+def synthesize_minimax(
+    text: str, voice_id: str, speed: float, tracker: CostTracker
+) -> bytes:
+    output, predict_time = run_prediction(
+        MINIMAX_TTS_MODEL,
+        {
+            "text": text,
+            "voice_id": voice_id,
+            "emotion": "auto",
+            "speed": round(min(max(speed, 0.5), 2.0), 2),
+            "sample_rate": 44100,
+            "bitrate": 256000,
+            "channel": "mono",
+            "audio_format": "mp3",
+            "language_boost": "English",
+            "english_normalization": True,
+        },
     )
-    if result.returncode != 0 or not result.stdout:
-        raise ValueError(f"ffmpeg decode failed: {result.stderr.decode()[:300]}")
-    return result.stdout
-
-
-def encode_mp3(pcm_chunks: list[bytes], output_path: Path) -> None:
-    """Join PCM chunks with short gaps and write a loudness-normalized MP3."""
-    gap = b"\x00" * (int(CHUNK_GAP_SECONDS * SAMPLE_RATE) * SAMPLE_WIDTH)
-    pcm = gap.join(pcm_chunks)
-    result = subprocess.run(
-        [
-            "ffmpeg", "-hide_banner", "-loglevel", "error", "-y",
-            "-f", "s16le", "-ar", str(SAMPLE_RATE), "-ac", "1", "-i", "pipe:0",
-            "-af", "loudnorm=I=-16:TP=-1.5:LRA=11",
-            "-ar", str(SAMPLE_RATE),
-            "-c:a", "libmp3lame", "-b:a", "192k",
-            str(output_path),
-        ],
-        input=pcm,
-        capture_output=True,
-        check=False,
+    tracker.add_replicate(
+        MINIMAX_TTS_MODEL, "tts", chars=len(text), predict_time=predict_time
     )
-    if result.returncode != 0:
-        raise ValueError(f"ffmpeg encode failed: {result.stderr.decode()[:300]}")
+    return _output_audio(output)
 
 
-def render_speech(
+def clone_minimax_voice(voice_audio_path: Path, tracker: CostTracker) -> str:
+    """Create a MiniMax cloned voice from the reference audio; return voice_id."""
+    with open(voice_audio_path, "rb") as audio_file:
+        output, predict_time = run_prediction(
+            MINIMAX_CLONE_MODEL,
+            {
+                "voice_file": audio_file,
+                "model": MINIMAX_CLONE_TARGET,
+                "need_noise_reduction": True,
+                "need_volume_normalization": True,
+            },
+        )
+    tracker.add_replicate(MINIMAX_CLONE_MODEL, "clone", predict_time=predict_time)
+    voice_id = output.get("voice_id") if isinstance(output, dict) else None
+    if not voice_id:
+        raise ValueError(f"MiniMax voice cloning returned no voice_id: {output!r}")
+    logger.info("Created MiniMax voice %s", voice_id)
+    return voice_id
+
+
+# ---------------------------------------------------------------------------
+# Episode rendering
+# ---------------------------------------------------------------------------
+
+
+@dataclass
+class VoiceRender:
+    engine: str
+    voice_audio_path: Path
+    reference_text: str
+    style_instruction: str | None = None
+    minimax_voice_id: str | None = None
+    pause_scale: float = 1.0
+    speed: float = 1.0
+
+
+def render_segment(seg: Segment, cfg: VoiceRender, tracker: CostTracker) -> np.ndarray:
+    text = prepare_text(seg.text, cfg.engine)
+    if cfg.engine == "minimax":
+        if not cfg.minimax_voice_id:
+            raise ValueError("MiniMax engine needs a cloned voice id")
+        raw = synthesize_minimax(text, cfg.minimax_voice_id, cfg.speed, tracker)
+        samples = audio.decode(raw)
+    else:
+        raw = synthesize_qwen(
+            text, cfg.voice_audio_path, cfg.reference_text, cfg.style_instruction,
+            tracker,
+        )
+        samples = audio.change_tempo(audio.decode(raw), cfg.speed)
+    return audio.stretch_gaps(audio.trim(samples), cfg.pause_scale)
+
+
+def render_episode(
     script: str,
     output_path: Path,
-    engine: str,
-    *,
-    voice_audio_path: Path,
-    reference_text: str,
-    style_instruction: str | None = None,
-    minimax_voice_id: str | None = None,
-    chunk_minutes: float | None = 1.0,
+    cfg: VoiceRender,
+    tracker: CostTracker,
+    jingles: bool = True,
 ) -> None:
-    """Synthesize a full script into output_path (MP3). Blocking."""
-    engine = resolve_engine(engine)
-    target_words = (
-        estimate_words_for_minutes(min(max(chunk_minutes, 0.25), 10.0))
-        if chunk_minutes
-        else None
-    )
-    chunks = chunk_script(script, target_words, ENGINE_MAX_CHARS[engine])
-    if not chunks:
+    """Synthesize the script, add jingles, write an MP3 to output_path."""
+    segments = parse_segments(script, ENGINE_MAX_CHARS[cfg.engine])
+    if not segments:
         raise ValueError("No text to synthesize")
+    logger.info(
+        "Rendering %d segments with %s (pause scale %.2f, speed %.2f)",
+        len(segments), cfg.engine, cfg.pause_scale, cfg.speed,
+    )
+    with ThreadPoolExecutor(max_workers=PARALLEL_REQUESTS) as pool:
+        parts = list(pool.map(lambda s: render_segment(s, cfg, tracker), segments))
 
-    logger.info("Rendering %d chunk(s) with %s", len(chunks), engine)
-    pcm_chunks = []
-    for idx, chunk in enumerate(chunks, start=1):
-        logger.info("Synthesizing chunk %d/%d", idx, len(chunks))
-        text = prepare_text(chunk, engine)
-        if engine == "minimax":
-            if not minimax_voice_id:
-                raise ValueError("MiniMax engine needs a cloned voice id")
-            audio = synthesize_minimax(text, minimax_voice_id)
-        else:
-            audio = synthesize_qwen(
-                text, voice_audio_path, reference_text, style_instruction
-            )
-        pcm_chunks.append(decode_to_pcm(audio))
+    pauses = [min(MAX_PAUSE_SECONDS, s.pause_after * cfg.pause_scale) for s in segments]
+    voice = audio.loudnorm(audio.join(parts, pauses))
 
-    encode_mp3(pcm_chunks, output_path)
+    if jingles:
+        intro, outro, voice_delay = pick_jingles()
+        episode = audio.mix_episode(voice, intro, outro, voice_delay)
+    else:
+        episode = voice
+    audio.encode_mp3(episode, output_path)

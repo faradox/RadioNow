@@ -216,7 +216,7 @@ a:hover {
 }
 
 .broadcast-content.expanded {
-    max-height: 1000px;
+    max-height: calc(65vh + 420px);
 }
 
 .audio-player {
@@ -258,6 +258,9 @@ a:hover {
     line-height: 1.8;
     white-space: pre-wrap;
     color: var(--text-secondary);
+    max-height: 65vh;
+    overflow-y: auto;
+    overscroll-behavior: contain;
 }
 
 /* Empty State */
@@ -657,4 +660,38 @@ audio::-webkit-media-controls-time-remaining-display {
     padding: 0.05rem 0.4rem;
     margin-right: 0.5rem;
     vertical-align: middle;
+}
+
+/* Episode cost */
+.cost {
+    display: block;
+    font-family: var(--font-mono);
+    font-size: 0.8rem;
+    color: var(--text-secondary);
+    margin-top: 0.3rem;
+}
+
+.cost summary {
+    cursor: pointer;
+}
+
+.cost-items {
+    list-style: none;
+    margin: 0.4rem 0 0.2rem;
+    padding-left: 0.8rem;
+    border-left: 2px solid var(--border);
+}
+
+.recent-list .cost-items li,
+.cost-items li {
+    display: grid;
+    grid-template-columns: 1fr auto;
+    column-gap: 1rem;
+    padding: 0.15rem 0;
+    border: none;
+}
+
+.cost-items li .muted {
+    grid-column: 1 / -1;
+    font-size: 0.75rem;
 }

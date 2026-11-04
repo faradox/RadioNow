@@ -12,6 +12,7 @@ x-all: &all
   DAILY_ENABLED: ${RADIONOW_DAILY_ENABLED:-true}
   DAILY_TIME: ${RADIONOW_DAILY_TIME:-06:00}
   NEWS_FEEDS: ${RADIONOW_NEWS_FEEDS:-}
+  REPLICATE_PRICES: ${RADIONOW_REPLICATE_PRICES:-}
   TZ: Europe/Berlin
   REPLICATE_API_TOKEN: ${RADIONOW_REPLICATE_API_TOKEN:?}
   MONGO_URL: ${RADIONOW_MONGO_URL:-mongodb://${RADIONOW_MONGO_INITDB_ROOT_USERNAME:-admin}:${RADIONOW_MONGO_INITDB_ROOT_PASSWORD:-admin}@radionow-mongodb:27017/}
@@ -31,6 +32,7 @@ services:
     volumes:
       - ./audio:/app/audio
       - ./voices:/app/voices
+      - ./jingles:/app/jingles:ro
     environment:
       <<: [*all]
       PORT: 8090

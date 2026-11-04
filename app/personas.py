@@ -57,14 +57,38 @@ BUILTIN_PERSONAS = {
     "ram-dass": RAM_DASS,
 }
 
+# (pause scale, speech speed). Pause scale multiplies every pause, including
+# the natural gaps inside sentences; speed < 1 slows the voice itself.
+BUILTIN_PACING = {
+    "watts": (1.6, 0.95),
+    "mckenna": (1.05, 1.0),
+    "ram-dass": (1.7, 0.94),
+}
+DEFAULT_PACING = (1.25, 1.0)
+
+
+def _builtin_key(name: str) -> str | None:
+    slug = slugify(name or "")
+    return next((key for key in BUILTIN_PERSONAS if key in slug), None)
+
+
+def builtin_pacing_for(name: str) -> tuple[float, float]:
+    key = _builtin_key(name)
+    return BUILTIN_PACING[key] if key else DEFAULT_PACING
+
+
+def pacing_for_voice(voice: dict) -> tuple[float, float]:
+    """(pause_scale, speed): voice overrides, else built-in defaults."""
+    default_scale, default_speed = builtin_pacing_for(voice.get("name", ""))
+    scale = voice.get("pause_scale") or default_scale
+    speed = voice.get("speech_speed") or default_speed
+    return min(max(float(scale), 0.5), 3.0), min(max(float(speed), 0.7), 1.3)
+
 
 def builtin_persona_for(name: str) -> str | None:
     """Return a built-in persona when the voice name matches a known host."""
-    slug = slugify(name or "")
-    for key, persona in BUILTIN_PERSONAS.items():
-        if key in slug:
-            return persona
-    return None
+    key = _builtin_key(name)
+    return BUILTIN_PERSONAS[key] if key else None
 
 
 def persona_for_voice(voice: dict) -> str | None:
