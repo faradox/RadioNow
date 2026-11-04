@@ -10,7 +10,7 @@ from bson import ObjectId
 from pymongo.errors import DuplicateKeyError
 
 from app.broadcasts import create_broadcast, engine_for_voice
-from app.database import Database, get_voices_collection
+from app.database import Database, get_broadcasts_collection, get_voices_collection
 from app.generator import OUTPUT_FORMAT, length_requirements, speech_rules
 from app.news import fetch_headlines, format_headlines
 from app.personas import is_builtin_host, persona_for_voice
@@ -65,7 +65,13 @@ def settings_coll():
 
 
 def runs_coll():
+    """One document per run (manual, retry or scheduled)."""
     return Database.get_db().daily_runs
+
+
+def days_coll():
+    """One document per Berlin date: the scheduler's claim and retry state."""
+    return Database.get_db().daily_schedule
 
 
 async def get_settings() -> dict:
@@ -180,27 +186,25 @@ REQUIREMENTS:
 # ---------------------------------------------------------------------------
 
 
-async def claim_run(day_key: str, force: bool) -> bool:
-    """Atomically claim the day's run. False if done/running/exhausted."""
+async def claim_scheduled_day(day_key: str) -> bool:
+    """Atomically claim the scheduler's slot for a day.
+
+    False if the day is done, a scheduled attempt is running, or retries are
+    exhausted / not yet due. Manual runs and retries never claim this slot.
+    """
     now = datetime.utcnow()
-    if force:
-        claimable = [{"status": {"$ne": "running"}}, {"started_at": {"$lt": now - STALE_RUN}}]
-    else:
-        claimable = [
-            {
-                "status": "failed",
-                "attempts": {"$lt": MAX_ATTEMPTS},
-                "finished_at": {"$lt": now - RETRY_AFTER},
-            },
-            {"status": "running", "started_at": {"$lt": now - STALE_RUN}},
-        ]
+    claimable = [
+        {
+            "status": "failed",
+            "attempts": {"$lt": MAX_ATTEMPTS},
+            "finished_at": {"$lt": now - RETRY_AFTER},
+        },
+        {"status": "running", "started_at": {"$lt": now - STALE_RUN}},
+    ]
     try:
-        await runs_coll().update_one(
+        await days_coll().update_one(
             {"_id": day_key, "$or": claimable},
-            {
-                "$set": {"status": "running", "started_at": now, "error": None},
-                "$inc": {"attempts": 1},
-            },
+            {"$set": {"status": "running", "started_at": now}, "$inc": {"attempts": 1}},
             upsert=True,
         )
         return True
@@ -208,19 +212,38 @@ async def claim_run(day_key: str, force: bool) -> bool:
         return False
 
 
-async def run_daily(day: date, force: bool = False) -> None:
-    """Generate the morning broadcast for `day` (Berlin date)."""
+async def run_daily(
+    day: date, trigger: str = "schedule", retry_of: str | None = None
+) -> None:
+    """Generate one morning broadcast for `day` (Berlin date).
+
+    Every run writes its own document, so runs never overwrite each other.
+    """
     day_key = day.isoformat()
-    if not await claim_run(day_key, force):
+    if trigger == "schedule" and not await claim_scheduled_day(day_key):
         return
 
-    logger.info("Starting daily broadcast for %s (force=%s)", day_key, force)
+    inserted = await runs_coll().insert_one(
+        {
+            "day": day_key,
+            "trigger": trigger,
+            "retry_of": retry_of,
+            "status": "running",
+            "started_at": datetime.utcnow(),
+        }
+    )
+    run_id = inserted.inserted_id
+    logger.info("Starting daily run %s for %s (%s)", run_id, day_key, trigger)
     try:
         settings = await get_settings()
         hosts = await host_rotation(settings)
         if not hosts:
             raise RuntimeError("No voices available for the daily broadcast")
         voice = host_for_day(hosts, day)
+        await runs_coll().update_one(
+            {"_id": run_id},
+            {"$set": {"voice_id": str(voice["_id"]), "voice_name": voice["name"]}},
+        )
 
         headlines = await fetch_headlines()
         if len(headlines) < MIN_HEADLINES:
@@ -243,18 +266,21 @@ async def run_daily(day: date, force: bool = False) -> None:
             llm_provider=settings.get("llm_provider") or None,
             tts_engine=engine,
             jingles=bool(settings.get("jingles", True)),
-            extra_fields={"kind": "daily", "daily_date": day_key},
+            extra_fields={
+                "kind": "daily",
+                "daily_date": day_key,
+                "daily_run_id": str(run_id),
+            },
         )
+        finished = datetime.utcnow()
         await runs_coll().update_one(
-            {"_id": day_key},
+            {"_id": run_id},
             {
                 "$set": {
                     "status": "done",
-                    "finished_at": datetime.utcnow(),
+                    "finished_at": finished,
                     "broadcast_id": str(doc["_id"]),
                     "title": doc["title"],
-                    "voice_id": str(voice["_id"]),
-                    "voice_name": voice["name"],
                     "llm_provider": doc["llm_provider"],
                     "tts_engine": doc["tts_engine"],
                     "cost": doc["cost"],
@@ -262,19 +288,106 @@ async def run_daily(day: date, force: bool = False) -> None:
                 }
             },
         )
-        logger.info("Daily broadcast for %s done: %s", day_key, doc["title"])
-    except Exception as e:
-        logger.exception("Daily broadcast for %s failed", day_key)
-        await runs_coll().update_one(
+        # Any successful run covers the day, so the scheduler won't add another.
+        await days_coll().update_one(
             {"_id": day_key},
-            {"$set": {"status": "failed", "finished_at": datetime.utcnow(), "error": str(e)}},
+            {"$set": {"status": "done", "finished_at": finished, "run_id": run_id}},
+            upsert=True,
         )
+        logger.info("Daily run %s done: %s", run_id, doc["title"])
+    except Exception as e:
+        logger.exception("Daily run %s for %s failed", run_id, day_key)
+        finished = datetime.utcnow()
+        await runs_coll().update_one(
+            {"_id": run_id},
+            {"$set": {"status": "failed", "finished_at": finished, "error": str(e)}},
+        )
+        if trigger == "schedule":
+            await days_coll().update_one(
+                {"_id": day_key},
+                {"$set": {"status": "failed", "finished_at": finished}},
+            )
 
 
-def start_run_in_background(day: date, force: bool = True) -> None:
-    task = asyncio.create_task(run_daily(day, force=force))
+def start_run_in_background(
+    day: date, trigger: str = "manual", retry_of: str | None = None
+) -> None:
+    task = asyncio.create_task(run_daily(day, trigger=trigger, retry_of=retry_of))
     _background_tasks.add(task)
     task.add_done_callback(_background_tasks.discard)
+
+
+LEGACY_SUCCESS_FIELDS = (
+    "broadcast_id", "title", "voice_id", "voice_name",
+    "llm_provider", "tts_engine", "cost", "headlines",
+)
+
+
+async def prepare_runs() -> None:
+    """Startup housekeeping: split legacy per-day records, fail orphaned runs.
+
+    Before 2026-11-04 one record per day was reused by every run, so a failed
+    manual run could overwrite the day's earlier success. Those records are
+    split back into a success run and a failed run.
+    """
+    async for legacy in runs_coll().find({"day": {"$exists": False}}):
+        day_key = str(legacy["_id"])
+        base = {"day": day_key, "retry_of": None}
+        if legacy.get("broadcast_id"):
+            broadcast = None
+            if ObjectId.is_valid(legacy["broadcast_id"]):
+                broadcast = await get_broadcasts_collection().find_one(
+                    {"_id": ObjectId(legacy["broadcast_id"])}, {"created_at": 1}
+                )
+            when = (broadcast or {}).get("created_at") or legacy.get("started_at")
+            await runs_coll().insert_one(
+                {
+                    **base,
+                    **{k: legacy.get(k) for k in LEGACY_SUCCESS_FIELDS},
+                    "trigger": "schedule",
+                    "status": "done",
+                    "started_at": when,
+                    "finished_at": when,
+                }
+            )
+        if legacy.get("status") == "failed" or legacy.get("error"):
+            await runs_coll().insert_one(
+                {
+                    **base,
+                    "trigger": "manual",
+                    "status": "failed",
+                    "error": legacy.get("error") or "unknown error",
+                    "started_at": legacy.get("started_at"),
+                    "finished_at": legacy.get("finished_at"),
+                }
+            )
+        await days_coll().update_one(
+            {"_id": day_key},
+            {
+                "$setOnInsert": {
+                    "status": "done" if legacy.get("broadcast_id") else legacy.get("status"),
+                    "attempts": legacy.get("attempts", 1),
+                    "finished_at": legacy.get("finished_at"),
+                }
+            },
+            upsert=True,
+        )
+        await runs_coll().delete_one({"_id": legacy["_id"]})
+        logger.info("Split legacy daily run record %s", day_key)
+
+    # Runs live in this process; anything still "running" at startup is dead.
+    result = await runs_coll().update_many(
+        {"status": "running"},
+        {
+            "$set": {
+                "status": "failed",
+                "finished_at": datetime.utcnow(),
+                "error": "Interrupted (app restarted during the run)",
+            }
+        },
+    )
+    if result.modified_count:
+        logger.warning("Marked %d interrupted daily runs as failed", result.modified_count)
 
 
 async def scheduler_loop() -> None:
@@ -296,8 +409,13 @@ async def scheduler_loop() -> None:
         await asyncio.sleep(60)
 
 
-async def recent_runs(limit: int = 14) -> list[dict]:
-    return [r async for r in runs_coll().find().sort("_id", -1).limit(limit)]
+async def recent_runs(limit: int = 20) -> list[dict]:
+    cursor = runs_coll().find({"day": {"$exists": True}}).sort("started_at", -1)
+    runs = []
+    async for run in cursor.limit(limit):
+        run["_id"] = str(run["_id"])
+        runs.append(run)
+    return runs
 
 
 def today_berlin() -> date:

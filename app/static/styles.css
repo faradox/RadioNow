@@ -695,3 +695,19 @@ audio::-webkit-media-controls-time-remaining-display {
     grid-column: 1 / -1;
     font-size: 0.75rem;
 }
+
+.run-status {
+    font-family: var(--font-mono);
+}
+
+.run-done {
+    color: var(--success);
+}
+
+.run-failed {
+    color: var(--error);
+}
+
+.run-running {
+    color: var(--warning);
+}

@@ -39,6 +39,7 @@ AUDIO_DIR = Path("/app/audio")
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await Database.connect()
+    await daily.prepare_runs()
     scheduler = asyncio.create_task(daily.scheduler_loop())
     yield
     scheduler.cancel()
@@ -385,7 +386,14 @@ async def update_daily_settings(request: Request):
 
 @app.post("/admin/daily/run")
 async def run_daily_now():
-    daily.start_run_in_background(daily.today_berlin(), force=True)
+    daily.start_run_in_background(daily.today_berlin(), trigger="manual")
     return redirect(
         "daily", message="Today's broadcast started. Reload in a few minutes."
     )
+
+
+@app.post("/admin/daily/runs/{run_id}/retry")
+async def retry_daily_run(run_id: str):
+    # A retry always generates for today, from this morning's headlines.
+    daily.start_run_in_background(daily.today_berlin(), trigger="retry", retry_of=run_id)
+    return redirect("daily", message="Trying again. Reload in a few minutes.")

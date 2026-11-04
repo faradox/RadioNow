@@ -96,9 +96,15 @@
             {% for run in runs %}
             <li class="recent-item">
                 <div class="recent-info">
-                    <span class="recent-title">{{ run._id }}: {{ run.title or run.status }}</span>
+                    <span class="recent-title">
+                        {{ run.day }}: {{ run.title or ('generating...' if run.status == 'running' else 'no broadcast') }}
+                    </span>
                     <span class="recent-meta">
-                        {{ run.status }} | attempt {{ run.attempts }}{% if run.voice_name %} | {{ run.voice_name }}{% endif %}{% if run.llm_provider %} | {{ run.llm_provider }}/{{ run.tts_engine }}{% endif %}
+                        <span class="run-status run-{{ run.status }}">{{ run.status }}</span>
+                        | {{ run.trigger }}
+                        {% if run.started_at %}| started {{ run.started_at.strftime('%H:%M') }} UTC{% endif %}
+                        {% if run.voice_name %}| {{ run.voice_name }}{% endif %}
+                        {% if run.llm_provider %}| {{ run.llm_provider }}/{{ run.tts_engine }}{% endif %}
                     </span>
                     {% if run.cost %}{{ cost_badge(run.cost) }}{% endif %}
                     {% if run.error %}<span class="run-error">{{ run.error }}</span>{% endif %}
@@ -113,6 +119,11 @@
                     </details>
                     {% endif %}
                 </div>
+                {% if run.status == 'failed' %}
+                <form action="/admin/daily/runs/{{ run._id }}/retry" method="post" class="recent-actions">
+                    <button type="submit" class="btn btn-primary btn-small">Try again</button>
+                </form>
+                {% endif %}
             </li>
             {% endfor %}
         </ul>

@@ -9,7 +9,10 @@ of one breathless read. All functions here are blocking.
 
 import logging
 import os
+import random
 import re
+import threading
+import time
 import urllib.request
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass
@@ -158,9 +161,72 @@ def _download(url: str) -> bytes:
         return response.read()
 
 
+class _CreateGate:
+    """Shared pacing for prediction creates across all render threads.
+
+    Replicate throttles creates (e.g. 6/min, burst 1, on accounts with under
+    $5 credit). After a 429 every thread waits out the reported reset, and
+    creates stay spaced for a while so the run finishes instead of failing.
+    """
+
+    SPACED_FOR = 600.0  # seconds to keep spacing creates after a throttle
+    SPACING = 10.5  # seconds between creates while throttled (6/min)
+
+    def __init__(self) -> None:
+        self._lock = threading.Lock()
+        self._not_before = 0.0
+        self._spaced_until = 0.0
+
+    def wait_turn(self) -> None:
+        with self._lock:
+            now = time.monotonic()
+            start = max(now, self._not_before)
+            if now < self._spaced_until:
+                self._not_before = start + self.SPACING
+            delay = start - now
+        if delay > 0:
+            time.sleep(delay)
+
+    def throttled(self, wait: float) -> None:
+        with self._lock:
+            now = time.monotonic()
+            self._not_before = max(self._not_before, now + wait)
+            self._spaced_until = now + self.SPACED_FOR
+
+
+_gate = _CreateGate()
+MAX_THROTTLE_RETRIES = 12
+
+
+def _is_throttle(error: Exception) -> bool:
+    text = str(error).lower()
+    return getattr(error, "status", None) == 429 or "429" in text or "throttled" in text
+
+
+def _throttle_wait(error: Exception) -> float:
+    match = re.search(r"resets in ~?(\d+(?:\.\d+)?)\s*s", str(error))
+    return (float(match.group(1)) if match else 10.0) + random.uniform(0.5, 2.0)
+
+
+def _create_prediction(model: str, inputs: dict):
+    for attempt in range(MAX_THROTTLE_RETRIES + 1):
+        _gate.wait_turn()
+        try:
+            return replicate.models.predictions.create(model=model, input=inputs)
+        except Exception as e:
+            if not _is_throttle(e) or attempt == MAX_THROTTLE_RETRIES:
+                raise
+            wait = _throttle_wait(e)
+            logger.warning("Replicate throttled %s; waiting %.0fs", model, wait)
+            _gate.throttled(wait)
+            for value in inputs.values():  # re-upload files from the start
+                if hasattr(value, "seek"):
+                    value.seek(0)
+
+
 def run_prediction(model: str, inputs: dict):
     """Run a Replicate prediction; return (output, predict_time seconds)."""
-    prediction = replicate.models.predictions.create(model=model, input=inputs)
+    prediction = _create_prediction(model, inputs)
     prediction.wait()
     if prediction.status != "succeeded":
         raise RuntimeError(f"{model} {prediction.status}: {prediction.error}")
