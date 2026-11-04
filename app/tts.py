@@ -19,8 +19,9 @@ logger = logging.getLogger("radionow.tts")
 QWEN_MODEL = os.getenv("QWEN_TTS_MODEL", "qwen/qwen3-tts")
 MINIMAX_TTS_MODEL = os.getenv("MINIMAX_TTS_MODEL", "minimax/speech-2.8-hd")
 MINIMAX_CLONE_MODEL = os.getenv("MINIMAX_CLONE_MODEL", "minimax/voice-cloning")
-# Target model family passed to the cloning job.
-MINIMAX_CLONE_TARGET = os.getenv("MINIMAX_CLONE_TARGET", "speech-02-hd")
+# Target model family passed to the cloning job. minimax/voice-cloning accepts
+# speech-2.6-hd/turbo and speech-02-hd/turbo (no 2.8 option as of 2026-11).
+MINIMAX_CLONE_TARGET = os.getenv("MINIMAX_CLONE_TARGET", "speech-2.6-hd")
 
 ENGINES = {
     "qwen3": "Qwen3-TTS (zero-shot clone per request)",
