@@ -270,6 +270,14 @@ def mix_episode(
     return out
 
 
+def encode_mp3_bytes(samples: np.ndarray, bitrate: str = "192k") -> bytes:
+    return _ffmpeg(
+        [*RAW_FMT, "-i", "pipe:0", "-c:a", "libmp3lame", "-b:a", bitrate, "-f", "mp3",
+         "pipe:1"],
+        samples.astype("<f4").tobytes(),
+    )
+
+
 def encode_mp3(samples: np.ndarray, output_path: Path, bitrate: str = "192k") -> None:
     _ffmpeg(
         [*RAW_FMT, "-i", "pipe:0", "-c:a", "libmp3lame", "-b:a", bitrate, "-y",

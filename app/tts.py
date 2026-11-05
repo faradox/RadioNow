@@ -7,6 +7,7 @@ are then joined with exact silences. This gives the host real timing instead
 of one breathless read. All functions here are blocking.
 """
 
+import io
 import logging
 import os
 import random
@@ -208,11 +209,13 @@ def _throttle_wait(error: Exception) -> float:
     return (float(match.group(1)) if match else 10.0) + random.uniform(0.5, 2.0)
 
 
-def _create_prediction(model: str, inputs: dict):
+def _create_prediction(model: str, inputs: dict, **params):
     for attempt in range(MAX_THROTTLE_RETRIES + 1):
         _gate.wait_turn()
         try:
-            return replicate.models.predictions.create(model=model, input=inputs)
+            return replicate.models.predictions.create(
+                model=model, input=inputs, **params
+            )
         except Exception as e:
             if not _is_throttle(e) or attempt == MAX_THROTTLE_RETRIES:
                 raise
@@ -224,9 +227,9 @@ def _create_prediction(model: str, inputs: dict):
                     value.seek(0)
 
 
-def run_prediction(model: str, inputs: dict):
+def run_prediction(model: str, inputs: dict, **params):
     """Run a Replicate prediction; return (output, predict_time seconds)."""
-    prediction = _create_prediction(model, inputs)
+    prediction = _create_prediction(model, inputs, **params)
     prediction.wait()
     if prediction.status != "succeeded":
         raise RuntimeError(f"{model} {prediction.status}: {prediction.error}")
@@ -282,17 +285,47 @@ def synthesize_minimax(
     return _output_audio(output)
 
 
+# MiniMax accepts mp3/m4a/wav, 10 s to 5 min, under 20 MB, and checks that the
+# extension matches the content. Stored references are always named .wav
+# whatever was uploaded, so they are re-encoded to a real MP3 first.
+CLONE_MIN_SECONDS = 10.0
+CLONE_MAX_SECONDS = 280.0
+
+
+def clone_reference_mp3(voice_audio_path: Path) -> bytes:
+    """The reference as a genuine mono MP3, trimmed to MiniMax's limits."""
+    samples = audio.decode_file(voice_audio_path)
+    seconds = len(samples) / audio.SAMPLE_RATE
+    if seconds < CLONE_MIN_SECONDS:
+        raise ValueError(
+            f"Reference audio is {seconds:.1f} s; MiniMax cloning needs at least "
+            f"{CLONE_MIN_SECONDS:.0f} s"
+        )
+    samples = samples[: int(CLONE_MAX_SECONDS * audio.SAMPLE_RATE)]
+    return audio.encode_mp3_bytes(samples, bitrate="160k")
+
+
 def clone_minimax_voice(voice_audio_path: Path, tracker: CostTracker) -> str:
     """Create a MiniMax cloned voice from the reference audio; return voice_id."""
-    with open(voice_audio_path, "rb") as audio_file:
+    mp3 = io.BytesIO(clone_reference_mp3(voice_audio_path))
+    mp3.name = "reference.mp3"  # the upload's filename and content type
+    inputs = {
+        "voice_file": mp3,
+        "model": MINIMAX_CLONE_TARGET,
+        "need_noise_reduction": True,
+        "need_volume_normalization": True,
+    }
+    try:
+        output, predict_time = run_prediction(MINIMAX_CLONE_MODEL, inputs)
+    except RuntimeError as e:
+        if "file ext" not in str(e):
+            raise
+        # Fall back to an inline data URL (data:audio/mpeg), which carries
+        # the type explicitly instead of relying on the uploaded file's URL.
+        logger.warning("MiniMax rejected the uploaded file (%s); retrying inline", e)
+        mp3.seek(0)
         output, predict_time = run_prediction(
-            MINIMAX_CLONE_MODEL,
-            {
-                "voice_file": audio_file,
-                "model": MINIMAX_CLONE_TARGET,
-                "need_noise_reduction": True,
-                "need_volume_normalization": True,
-            },
+            MINIMAX_CLONE_MODEL, inputs, file_encoding_strategy="base64"
         )
     tracker.add_replicate(MINIMAX_CLONE_MODEL, "clone", predict_time=predict_time)
     voice_id = output.get("voice_id") if isinstance(output, dict) else None
