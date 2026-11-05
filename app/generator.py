@@ -5,6 +5,7 @@ import logging
 import os
 import re
 import uuid
+from dataclasses import dataclass, field
 from datetime import datetime
 from pathlib import Path
 from wave import Error as WaveError, open as wave_open
@@ -77,6 +78,8 @@ Return ONLY a JSON object with exactly these keys:
 {
   "title": "short evocative episode title, max 8 words",
   "summary": "2-3 sentence teaser for the episode listing",
+  "motifs": ["the 3-6 central images, metaphors and running jokes of the
+             script, a few words each"],
   "script": "the complete monologue, paragraphs separated by blank lines"
 }"""
 
@@ -113,48 +116,103 @@ REQUIREMENTS:
 {OUTPUT_FORMAT}"""
 
 
-async def generate_script(
-    prompt: str, provider: str | None
-) -> tuple[str, str, str, dict]:
-    """Run a script prompt; return (title, script, summary, usage).
+@dataclass
+class Script:
+    title: str
+    script: str  # keeps its [pause] markers; strip them for display
+    summary: str
+    motifs: list[str] = field(default_factory=list)
+    model: str = ""
 
-    The script keeps its [pause] markers; strip them for display.
+
+LLM_ATTEMPTS = 2
+
+
+async def generate_script(prompt: str, provider: str | None, tracker) -> Script:
+    """Run a script prompt and parse the result; one retry on malformed output.
+
+    Every attempt's token usage is added to `tracker` (a CostTracker).
     """
-    raw, usage = await generate_script_json(prompt, provider)
-    title, script, summary = parse_script_response(raw)
-    logger.info("Generated script: %s (%d chars)", title, len(script))
-    return title, script, summary, usage
+    for attempt in range(1, LLM_ATTEMPTS + 1):
+        raw, usage = await generate_script_json(prompt, provider)
+        tracker.add_llm(usage["model"], usage["input_tokens"], usage["output_tokens"])
+        try:
+            result = parse_script_response(raw)
+        except ValueError as e:
+            logger.warning("Malformed script response (attempt %d): %s", attempt, e)
+            if attempt == LLM_ATTEMPTS:
+                raise ValueError(f"LLM returned a malformed script twice: {e}") from e
+            continue
+        logger.info("Generated script: %s (%d chars)", result.title, len(result.script))
+        result.model = usage["model"]
+        return result
+    raise AssertionError("unreachable")
 
 
 # ---------------------------------------------------------------------------
 # Response parsing
 # ---------------------------------------------------------------------------
 
+SCRIPT_KEYS = ("title", "summary", "motifs", "script")
 
-def parse_script_response(response_text: str) -> tuple[str, str, str]:
-    """Parse LLM response into title, script, and summary."""
-    json_payload = _extract_json_payload(response_text)
-    if json_payload:
+
+def parse_script_response(response_text: str) -> Script:
+    """Parse the LLM's JSON answer; raise ValueError if it isn't usable.
+
+    Never falls back to treating raw JSON as the script: that would have the
+    host read the braces and keys out loud.
+    """
+    payload = _extract_json_payload(response_text)
+    if payload is None:
+        raise ValueError("no JSON object in the response")
+    data = _loads_lenient(payload)
+    script = str(data.get("script") or "").strip()
+    if len(script.split()) < 30:
+        raise ValueError("script missing or too short")
+    if re.search(r'"(title|summary|script|motifs)"\s*:', script):
+        raise ValueError("script contains JSON keys")
+    title = str(data.get("title") or "").strip().strip('"').strip("*")
+    if not re.search(r"\w", title):
+        title = "Untitled Broadcast"
+    motifs = data.get("motifs") or []
+    if isinstance(motifs, str):
+        motifs = [m for m in re.split(r"[;\n]", motifs)]
+    motifs = [str(m).strip() for m in motifs if str(m).strip()][:8]
+    summary = normalize_summary(str(data.get("summary") or ""), speakable_text(script))
+    return Script(title=title[:120], script=script, summary=summary, motifs=motifs)
+
+
+def _loads_lenient(payload: str) -> dict:
+    """json.loads, tolerating raw newlines in strings, then a key-split repair."""
+    try:
+        data = json.loads(payload, strict=False)
+        if isinstance(data, dict):
+            return data
+    except json.JSONDecodeError as e:
+        logger.warning("JSON decode failed (%s); trying key-split repair", e)
+    return _repair_by_keys(payload)
+
+
+def _repair_by_keys(payload: str) -> dict:
+    """Recover string fields from almost-JSON (e.g. unescaped quotes)."""
+    key_re = re.compile(r'"(%s)"\s*:\s*' % "|".join(SCRIPT_KEYS))
+    matches = list(key_re.finditer(payload))
+    if not matches:
+        raise ValueError("unparseable JSON")
+    data: dict = {}
+    for idx, m in enumerate(matches):
+        end = matches[idx + 1].start() if idx + 1 < len(matches) else len(payload)
+        value = payload[m.end() : end].strip().rstrip("}").strip().rstrip(",").strip()
+        if m.group(1) == "motifs":
+            data["motifs"] = re.findall(r'"((?:[^"\\]|\\.)*)"', value)
+            continue
+        if value.startswith('"') and value.endswith('"') and len(value) >= 2:
+            value = value[1:-1]
         try:
-            data = json.loads(json_payload)
-            title = str(data.get("title", "")).strip().strip('"').strip("*")
-            script = str(data.get("script", "")).strip()
-            summary = str(data.get("summary", "")).strip()
-            if not script:
-                raise ValueError("Missing script in JSON response")
-            return title or "Untitled Broadcast", script, normalize_summary(
-                summary, script
-            )
-        except (json.JSONDecodeError, ValueError) as e:
-            logger.warning("Failed to parse JSON script response: %s", e)
-
-    lines = response_text.strip().split("\n", 2)
-    if len(lines) >= 3:
-        title = lines[0].strip().strip('"').strip("*") or "Untitled Broadcast"
-        script = lines[2].strip()
-    else:
-        title, script = "Untitled Broadcast", response_text.strip()
-    return title, script, normalize_summary("", script)
+            data[m.group(1)] = json.loads(f'"{value}"', strict=False)
+        except json.JSONDecodeError:
+            data[m.group(1)] = value.replace("\\n", "\n").replace('\\"', '"')
+    return data
 
 
 def _extract_json_payload(text: str) -> str | None:
@@ -166,6 +224,10 @@ def _extract_json_payload(text: str) -> str | None:
     if start_idx == -1 or end_idx <= start_idx:
         return None
     return stripped[start_idx : end_idx + 1]
+
+
+def speakable_text(script: str) -> str:
+    return re.sub(r"\s*\[(?:long )?pause\]\s*", " ", script)
 
 
 def normalize_summary(summary: str, script: str) -> str:

@@ -16,6 +16,7 @@ from fastapi.templating import Jinja2Templates
 from slugify import slugify
 
 from app import daily
+from app.daily_prompt import DEFAULT_STANCE
 from app.broadcasts import create_broadcast, engine_for_voice
 from app.database import Database, get_broadcasts_collection, get_voices_collection
 from app.generator import (
@@ -125,8 +126,22 @@ async def load_broadcasts(limit: int = 0) -> list[dict]:
 
 @app.get("/", response_class=HTMLResponse)
 async def index(request: Request):
-    broadcasts = await load_broadcasts()
-    return templates.TemplateResponse(request, "index.html", {"broadcasts": broadcasts})
+    episodes = [
+        {
+            "id": b["_id"],
+            "title": b.get("title") or "Untitled",
+            "host": b["voice_name"],
+            "date": b["created_at"].strftime("%B %-d, %Y"),
+            "duration": b["duration_seconds"],
+            "audio": f"/audio/{b['audio_filename']}",
+            "summary": b["summary_display"],
+            "script": b.get("generated_script") or "",
+            "daily": b.get("kind") == "daily",
+        }
+        for b in await load_broadcasts()
+        if b.get("audio_filename")
+    ]
+    return templates.TemplateResponse(request, "index.html", {"episodes": episodes})
 
 
 @app.get("/audio/{filename}")
@@ -180,7 +195,7 @@ async def admin(request: Request, tab: str = "generate"):
             rotation=[{"_id": str(h["_id"]), "name": h["name"]} for h in hosts],
             today_host=daily.host_for_day(hosts, daily.today_berlin())["name"] if hosts else None,
             runs=await daily.recent_runs(),
-            default_stance=daily.DEFAULT_STANCE,
+            default_stance=DEFAULT_STANCE,
         )
     return templates.TemplateResponse(request, "admin.html", context)
 
@@ -416,7 +431,7 @@ async def update_daily_settings(request: Request):
             # Saving the untouched default keeps following future default updates.
             "stance": (
                 ""
-                if str(form.get("stance", "")).strip() == daily.DEFAULT_STANCE.strip()
+                if str(form.get("stance", "")).strip() == DEFAULT_STANCE.strip()
                 else str(form.get("stance", "")).strip()
             ),
         }

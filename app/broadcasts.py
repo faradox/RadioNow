@@ -110,8 +110,8 @@ async def create_broadcast(
     style_instruction = style_override or voice.get("style_instruction")
     tracker = CostTracker()
 
-    title, script, summary, usage = await generate_script(prompt, provider)
-    tracker.add_llm(usage["model"], usage["input_tokens"], usage["output_tokens"])
+    result = await generate_script(prompt, provider, tracker)
+    title, script = result.title, result.script
     audio_path, duration_seconds = await render_for_voice(
         voice, script, engine, style_instruction, tracker, jingles
     )
@@ -124,12 +124,13 @@ async def create_broadcast(
         "input_text": input_text,
         "generated_script": speakable(script),
         "script_markup": script,
-        "summary": summary,
+        "summary": result.summary,
+        "motifs": result.motifs,
         "audio_filename": audio_path.name,
         "duration_seconds": duration_seconds,
         "style_override": style_override,
         "llm_provider": provider,
-        "llm_model": usage["model"],
+        "llm_model": result.model,
         "tts_engine": engine,
         "jingles": jingles,
         "cost": tracker.summary(),

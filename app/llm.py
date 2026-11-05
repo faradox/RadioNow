@@ -25,10 +25,24 @@ SCRIPT_SCHEMA = {
     "properties": {
         "title": {"type": "string"},
         "summary": {"type": "string"},
+        "motifs": {"type": "array", "items": {"type": "string"}},
         "script": {"type": "string"},
     },
-    "required": ["title", "summary", "script"],
+    "required": ["title", "summary", "motifs", "script"],
     "additionalProperties": False,
+}
+
+# Same shape in Gemini's OpenAPI subset (property order = output order).
+GEMINI_SCRIPT_SCHEMA = {
+    "type": "OBJECT",
+    "properties": {
+        "title": {"type": "STRING"},
+        "summary": {"type": "STRING"},
+        "motifs": {"type": "ARRAY", "items": {"type": "STRING"}},
+        "script": {"type": "STRING"},
+    },
+    "required": ["title", "summary", "motifs", "script"],
+    "property_ordering": ["title", "summary", "motifs", "script"],
 }
 
 _gemini_client: genai.Client | None = None
@@ -88,6 +102,7 @@ async def _gemini_generate(prompt: str) -> tuple[str, dict]:
         contents=prompt,
         config=genai_types.GenerateContentConfig(
             response_mime_type="application/json",
+            response_schema=GEMINI_SCRIPT_SCHEMA,
         ),
     )
     text = response.text or ""

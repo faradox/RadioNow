@@ -7,7 +7,8 @@ AI-powered audio broadcast generator with voice cloning.
 ## Features
 
 - Create custom voices from short reference audio clips, each with a writing
-  persona (built-in for Alan Watts, Terence McKenna, Ram Dass) and a TTS engine.
+  persona (built-in for Alan Watts, Terence McKenna, Ram Dass, Audre Lorde,
+  John Cleese; matched by voice name) and a TTS engine.
 - Generate spoken broadcasts from a topic plus optional creative "twist".
 - Switch the script LLM (Gemini 4 Argon or Claude Opus 5.5) and the TTS engine
   (Qwen3-TTS or MiniMax Speech HD) per broadcast to compare them.
@@ -102,13 +103,15 @@ radionow/
 │   ├── audio.py         # numpy/ffmpeg PCM: pacing, loudness, mixing, MP3
 │   ├── bowls.py         # singing bowl synthesis / jingle recordings
 │   ├── costs.py         # LLM + Replicate pricing, per-episode cost tracking
-│   ├── daily.py         # morning broadcast prompt, runs, scheduler
+│   ├── daily.py         # morning broadcast runs, scheduler
+│   ├── daily_prompt.py  # morning prompt: stance, host angle, daily form, recent motifs
 │   ├── news.py          # RSS/Atom headline fetching
-│   ├── personas.py      # built-in host writing personas
+│   ├── personas.py      # built-in host personas, morning angles, pacing
 │   ├── models.py
 │   ├── database.py
-│   ├── templates/
-│   └── static/
+│   ├── templates/       # index.html + _scene.svg (landing), admin*.html
+│   └── static/          # landing.css/js (public page), styles.css (admin)
+├── tools/scene.py       # regenerates templates/_scene.svg
 ├── audio/               # Generated broadcast audio (volume)
 ├── voices/              # Uploaded voice reference audio (volume)
 ├── jingles/             # Optional singing bowl recordings (volume, read-only)

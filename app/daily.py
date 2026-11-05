@@ -11,9 +11,9 @@ from pymongo.errors import DuplicateKeyError
 
 from app.broadcasts import create_broadcast, engine_for_voice
 from app.database import Database, get_broadcasts_collection, get_voices_collection
-from app.generator import OUTPUT_FORMAT, length_requirements, speech_rules
+from app.daily_prompt import build_daily_prompt
 from app.news import fetch_headlines, format_headlines
-from app.personas import is_builtin_host, persona_for_voice
+from app.personas import is_builtin_host
 from app.tts import engine_supports_cues
 
 logger = logging.getLogger("radionow.daily")
@@ -24,27 +24,6 @@ RETRY_AFTER = timedelta(minutes=15)
 STALE_RUN = timedelta(minutes=45)
 CATCHUP_WINDOW = timedelta(hours=6)
 MIN_HEADLINES = 10
-
-DEFAULT_STANCE = """\
-The show sees through the spectacle, and the host speaks from that place:
-- Politics is theatre. Elections, parties, summits and scandals are a stage
-  play for the audience; the costumes and slogans change, the script and the
-  owners of the theatre do not. Left and right are two teams in the same
-  show, and the listener is invited to stop rooting for either.
-- The news is not information but programming. It manufactures "the current
-  thing": what to fear this week, whom to hate, what to argue about. It is
-  shaped by intelligence agencies, PR firms and a handful of media owners,
-  and "official consensus" is part of the costume.
-- Real power sits with a small, unaccountable club of the ultra-rich and
-  their institutions (central banks, arms makers, tech monopolies, the
-  permanent bureaucracy) that needs the 99% distracted, anxious and divided.
-- Read every headline as a scene in that play: ask what it is distracting
-  from, who profits when the audience feels this way, and what the stage
-  managers would rather nobody noticed.
-- The host's mission is to wake the listener up gently: to break the spell
-  with laughter, hand them back their attention (the one thing the system
-  cannot run without) and remind them that the real world is the one in
-  front of their nose, which is still astonishing."""
 
 DEFAULT_SETTINGS = {
     "enabled": os.getenv("DAILY_ENABLED", "true").lower() in ("1", "true", "yes"),
@@ -105,98 +84,33 @@ def host_for_day(hosts: list[dict], day: date) -> dict:
     return hosts[day.toordinal() % len(hosts)]
 
 
-# ---------------------------------------------------------------------------
-# Prompt
-# ---------------------------------------------------------------------------
+RECENT_EPISODES = 8
 
 
-def build_daily_prompt(
-    voice: dict,
-    day: date,
-    wire: str,
-    target_minutes: int,
-    cues_supported: bool,
-    stance: str | None = None,
-) -> str:
-    persona = persona_for_voice(voice) or f"{voice['name']}, a warm and witty host."
-    weekday = day.strftime("%A, %B %-d, %Y")
-    stance = (stance or "").strip() or DEFAULT_STANCE
-    return f"""You are writing the 6 AM edition of "Radio Now: The Morning \
-Broadcast", spoken by one host. Listeners are just waking up, still in bed or \
-making coffee. It is {weekday}.
-
-HOST (write entirely in this person's voice and way of thinking; capture the
-style, never quote or recycle their famous lines):
-{persona}
-
-EDITORIAL STANCE (the lens of the whole show; let it cut through every
-segment, in the host's own idiom, with wit rather than ranting):
-{stance}
-
-Below is this morning's raw news wire from several mainstream outlets. It is
-source material, i.e. the official script of today's play, not the truth.
-
-{wire}
-
-YOUR TASK:
-Write the host's morning monologue: a piercing, funny, comforting essay that
-riffs on the day's events through the stance above. This is satire and
-philosophy, NOT a news bulletin.
-
-The mood (most important): the stance is the lens, delight is the mood.
-- The host is not angry about the show, he is enormously amused by it. Seeing
-  through the puppet theatre is the good news: once you see the strings, the
-  whole production becomes hilarious. Aim for at least two laughs for every
-  sharp observation, and never let more than a paragraph pass without one.
-- Zen paradox: the harder the powerful try to control everything, the more
-  ridiculous they look; the more seriously the news takes itself, the
-  funnier it gets; the cure for the spell is not to fight it but to laugh.
-- "Silly me": the host regularly catches himself getting sucked into the
-  drama ("and for a moment there I was terribly worried about the bond
-  markets, as if I owned any bonds!") and laughs at himself. He is a fellow
-  audience member who keeps wandering off to the snack bar, not a prophet.
-- Cosmic perspective: from far enough out, even the villains are actors the
-  universe hired to play villains, rather badly, in a show it puts on for its
-  own amusement. Wonder and mischief over doom.
-- No bitterness, no despair, no lists of grievances. If a passage turns
-  heavy, end it with a turn toward the absurd, then a [pause].
-
-How to use the wire:
-- Find the 2-4 stories that dominate across several outlets; those are
-  today's "current thing". Add at most one item from the lighter section if
-  it is delightful.
-- Never summarise or "read out" the news. Mention each real event in a single
-  light sentence at most, just enough for the listener to recognise it, then
-  pull back the curtain: what is the show really about, who is in the
-  audience, who sells the tickets? Use parables, mock-cosmic interpretations,
-  imagined scenes backstage, mock-serious theories.
-- Connect the stories into one arc with a single underlying idea, so it
-  feels like an essay, not a list of bits.
-- Be pointed, and deliver every point as a joke. Name the trick, mock the
-  stagecraft, and do not soften the stance with "of course both sides have a
-  point" or appeals to trust institutions.
-
-Boundaries (they keep the satire sharp and honest):
-- Present the stance as the host's perspective and satire. Do not invent
-  specific facts (fake quotes, documents, numbers or secret operations) and
-  state them as real; invented material must be unmistakably playful.
-- Mock institutions, roles, public behaviour and power. Do not accuse named
-  real people of specific crimes.
-- Never laugh at victims, the poor, the sick or ordinary people. Wars,
-  attacks, disasters, deaths and crimes: no descriptions, no numbers, no
-  jokes about suffering. Leave them out or acknowledge them in one tender
-  sentence, which may note who profits from the fear.
-- Do not open with "Good morning" plus a weather report, and avoid cliches
-  like "buckle up". Open with a hook in the host's own manner.
-- End by sending the listener into the day free, awake and amused rather
-  than angry or paranoid: a small invitation, a practical absurdity, a
-  breath, a laugh.
-
-REQUIREMENTS:
-{length_requirements(target_minutes)}
-{speech_rules(cues_supported)}
-
-{OUTPUT_FORMAT}"""
+async def recent_daily_episodes(limit: int = RECENT_EPISODES) -> list[dict]:
+    """Latest morning broadcasts, for the anti-repetition list in the prompt."""
+    cursor = (
+        get_broadcasts_collection()
+        .find(
+            {"kind": "daily"},
+            {"title": 1, "summary": 1, "motifs": 1, "voice_id": 1},
+        )
+        .sort("created_at", -1)
+        .limit(limit)
+    )
+    episodes = [ep async for ep in cursor]
+    ids = [
+        ObjectId(ep["voice_id"])
+        for ep in episodes
+        if ObjectId.is_valid(ep.get("voice_id", ""))
+    ]
+    names = {
+        str(v["_id"]): v["name"]
+        async for v in get_voices_collection().find({"_id": {"$in": ids}}, {"name": 1})
+    }
+    for ep in episodes:
+        ep["voice_name"] = names.get(ep.get("voice_id"), "?")
+    return episodes
 
 
 # ---------------------------------------------------------------------------
@@ -276,6 +190,7 @@ async def run_daily(
             minutes,
             engine_supports_cues(engine),
             settings.get("stance"),
+            await recent_daily_episodes(),
         )
         doc = await create_broadcast(
             voice,

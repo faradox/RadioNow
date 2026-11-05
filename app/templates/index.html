@@ -2,92 +2,88 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
     <title>Radio Now</title>
-    <link rel="stylesheet" href="/static/styles.css">
+    <meta name="description" content="Radio Now: morning broadcasts and musings from AI-voiced philosophers, poets and comedians.">
+    <meta name="theme-color" content="#1d2433">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link href="https://fonts.googleapis.com/css2?family=Rajdhani:wght@400;500;600&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <link href="https://fonts.googleapis.com/css2?family=Cormorant+Garamond:ital,wght@0,400;0,500;1,400&family=Jost:wght@300;400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="/static/landing.css">
+    <script>
+        // Sky follows the visitor's clock; set before first paint.
+        (function () {
+            const h = new Date().getHours();
+            const t = h >= 5 && h < 10 ? 'dawn' : h >= 10 && h < 17 ? 'day' : h >= 17 && h < 21 ? 'dusk' : 'night';
+            document.documentElement.dataset.time = t;
+        })();
+    </script>
 </head>
 <body>
-    <div class="container">
-        <header class="header">
-            <h1 class="logo">Radio Now</h1>
-            <p class="tagline">Audio Broadcasts from the Eternal Now</p>
-        </header>
+    {% include "_scene.svg" %}
+    <div class="vignette"></div>
 
-        <main class="broadcasts">
-            {% if broadcasts %}
-                {% for broadcast in broadcasts %}
-                <article class="broadcast-card" data-id="{{ broadcast._id }}">
-                    <div class="broadcast-header" onclick="toggleBroadcast('{{ broadcast._id }}')">
-                        <div class="broadcast-info">
-                            <h2 class="broadcast-title">{% if broadcast.kind == 'daily' %}<span class="badge-daily">Morning Broadcast</span>{% endif %}{{ broadcast.title }}</h2>
-                            <div class="broadcast-meta">
-                                <span class="voice-name">{{ broadcast.voice_name }}</span>
-                                <span class="separator">|</span>
-                                <span class="duration">{{ format_duration(broadcast.duration_seconds) }}</span>
-                                <span class="separator">|</span>
-                                <span class="date">{{ broadcast.created_at.strftime('%b %d, %Y') }}</span>
-                            </div>
-                        </div>
-                        <div class="expand-icon">
-                            <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-                                <polyline points="6 9 12 15 18 9"></polyline>
-                            </svg>
-                        </div>
-                    </div>
-                    <div class="broadcast-content" id="content-{{ broadcast._id }}">
-                        <div class="audio-player">
-                            <audio controls preload="none">
-                                <source src="/audio/{{ broadcast.audio_filename }}" type="{{ audio_mime(broadcast.audio_filename) }}">
-                                Your browser does not support the audio element.
-                            </audio>
-                        </div>
-                        {% if broadcast.summary_display %}
-                        <div class="broadcast-summary">
-                            <strong>Summary:</strong> {{ broadcast.summary_display }}
-                        </div>
-                        {% endif %}
-                        <details class="script-details">
-                            <summary>View Script</summary>
-                            <div class="script-text">{{ broadcast.generated_script }}</div>
-                        </details>
-                    </div>
-                </article>
-                {% endfor %}
-            {% else %}
-                <div class="empty-state">
-                    <p>No broadcasts yet.</p>
-                    <p class="empty-hint">Check back soon for new content.</p>
-                </div>
-            {% endif %}
-        </main>
+    <header class="top">
+        <h1 class="wordmark">Radio Now</h1>
+        <nav class="top-actions">
+            <button class="icon-btn" id="btn-script" aria-label="Read the script" title="Script">
+                <svg viewBox="0 0 24 24"><path d="M6 4h9l3 3v13H6z M9 10h6 M9 13h6 M9 16h4"/></svg>
+            </button>
+            <button class="icon-btn" id="btn-list" aria-label="All episodes" title="All episodes">
+                <svg viewBox="0 0 24 24"><path d="M5 7h14 M5 12h14 M5 17h9"/></svg>
+            </button>
+        </nav>
+    </header>
 
-        <footer class="footer">
-            <p>&copy; {{ now().year if now is defined else '2026' }} Radio Now</p>
-        </footer>
-    </div>
+    <main class="player" {% if not episodes %}hidden{% endif %}>
+        <p class="ep-kicker" id="ep-kicker"></p>
+        <h2 class="ep-title" id="ep-title"></h2>
+        <p class="ep-meta" id="ep-meta"></p>
 
-    <script>
-        function toggleBroadcast(id) {
-            const content = document.getElementById('content-' + id);
-            const card = document.querySelector(`[data-id="${id}"]`);
-            
-            if (content.classList.contains('expanded')) {
-                content.classList.remove('expanded');
-                card.classList.remove('expanded');
-            } else {
-                // Close all others
-                document.querySelectorAll('.broadcast-content.expanded').forEach(el => {
-                    el.classList.remove('expanded');
-                    el.closest('.broadcast-card').classList.remove('expanded');
-                });
-                
-                content.classList.add('expanded');
-                card.classList.add('expanded');
-            }
-        }
-    </script>
+        <div class="progress" id="progress" role="slider" aria-label="Seek" tabindex="0"
+            aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+            <div class="progress-fill" id="progress-fill"></div>
+        </div>
+        <div class="times"><span id="t-cur">0:00</span><span id="t-dur">0:00</span></div>
+
+        <div class="controls">
+            <button class="icon-btn" id="btn-prev" aria-label="Newer episode" title="Newer">
+                <svg viewBox="0 0 24 24"><path d="M7 6v12 M18 6l-8 6 8 6z"/></svg>
+            </button>
+            <button class="play-btn" id="btn-play" aria-label="Play">
+                <svg class="i-play" viewBox="0 0 24 24"><path d="M9 6.5v11l9-5.5z"/></svg>
+                <svg class="i-pause" viewBox="0 0 24 24"><path d="M9 6v12 M15 6v12"/></svg>
+            </button>
+            <button class="icon-btn" id="btn-next" aria-label="Older episode" title="Older">
+                <svg viewBox="0 0 24 24"><path d="M17 6v12 M6 6l8 6-8 6z"/></svg>
+            </button>
+        </div>
+    </main>
+
+    {% if not episodes %}
+    <main class="player empty"><h2 class="ep-title">The station is still quiet.</h2><p class="ep-meta">Check back at sunrise.</p></main>
+    {% endif %}
+
+    <aside class="panel" id="panel-list" aria-hidden="true">
+        <div class="panel-head">
+            <h3>Episodes</h3>
+            <button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12 M18 6L6 18"/></svg></button>
+        </div>
+        <ol class="ep-list" id="ep-list"></ol>
+    </aside>
+
+    <aside class="panel" id="panel-script" aria-hidden="true">
+        <div class="panel-head">
+            <h3 id="script-title">Script</h3>
+            <button class="icon-btn" data-close aria-label="Close"><svg viewBox="0 0 24 24"><path d="M6 6l12 12 M18 6L6 18"/></svg></button>
+        </div>
+        <div class="script-body" id="script-body"></div>
+    </aside>
+
+    <footer class="note">All voices are AI recreations. Satire, not news.</footer>
+
+    <audio id="audio" preload="metadata"></audio>
+    <script id="episodes-data" type="application/json">{{ episodes | tojson }}</script>
+    <script src="/static/landing.js" defer></script>
 </body>
 </html>

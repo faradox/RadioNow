@@ -3,7 +3,7 @@
     <h2>Daily Morning Broadcast</h2>
     <p class="help-text" style="margin-bottom: 1.25rem;">
         Every day at the set time (Europe/Berlin) the app pulls world headlines from public RSS
-        feeds and has the day's host write a comforting, satirical take on them. Hosts rotate
+        feeds and has the day's host write a comforting, satirical take on them, in their own manner and in a form that changes daily (parable, mock lecture, open letter...), avoiding the images of the last 8 episodes. Hosts rotate
         by date. At most one run per day; failed runs retry up to 3 times, 15 minutes apart,
         within 6 hours of the scheduled time.
     </p>
@@ -75,7 +75,7 @@
             </label>
             {% endfor %}
             <small class="help-text">
-                None checked = every voice with a built-in persona (Watts, McKenna, Ram Dass).
+                None checked = every voice with a built-in persona (Watts, McKenna, Ram Dass, Lorde, Cleese).
                 Current rotation: {{ rotation | map(attribute='name') | join(', ') or 'none' }}.
                 {% if today_host %}Today's host: <strong>{{ today_host }}</strong>.{% endif %}
             </small>
