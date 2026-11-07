@@ -101,7 +101,7 @@ BUILTIN_PERSONAS = {
     "cleese": JOHN_CLEESE,
 }
 
-# How each host reads the morning news through the show's stance: their own
+# How each host reads the daily news through the show's stance: their own
 # worldview, material and kind of laugh. Keeps the hosts from converging on
 # one shared voice.
 MORNING_ANGLES = {
@@ -155,7 +155,7 @@ MORNING_ANGLES = {
 - His material: escalating logical absurdity, mock-official procedure, the
   English class system, the psychology of self-importance, stupid people
   being unable to notice it, imagined meetings backstage where the play gets
-  written by people who should not be allowed near a kettle.
+  written by people who should not be allowed near a stapler.
 - His laugh: exasperation building to an over-articulated explosion, then a
   quiet, perfectly timed understatement. The most sketch-like, outright
   funny host of the station.""",
@@ -198,7 +198,7 @@ def builtin_persona_for(name: str) -> str | None:
 
 
 def morning_angle_for_voice(voice: dict) -> str | None:
-    """The built-in host's take on the morning news, else None."""
+    """The built-in host's take on the daily news, else None."""
     key = _builtin_key(voice.get("name", ""))
     return MORNING_ANGLES.get(key) if key else None
 

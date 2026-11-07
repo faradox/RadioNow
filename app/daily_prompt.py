@@ -1,4 +1,4 @@
-"""Prompt for the daily morning broadcast: stance, host angle, form of the day."""
+"""Prompt for the daily broadcast: stance, host angle, form of the day."""
 
 import random
 from datetime import date
@@ -24,10 +24,9 @@ The show sees through the spectacle, and the host speaks from that place:
 - Read every headline with these questions: what is it distracting from,
   who profits when the audience feels this way, and what would the people
   in charge rather nobody noticed?
-- The host's mission is to wake the listener up gently: to break the spell
-  with laughter, hand them back their attention (the one thing the system
-  cannot run without) and remind them that the real world is the one in
-  front of their nose, which is still astonishing."""
+- The host's mission is to break the spell with laughter and hand the
+  listener back their attention, the one thing the system cannot run
+  without, and with it a world far stranger and better than the headlines."""
 
 # Rotated by date so episodes differ in shape, not only in topic.
 FORMS = [
@@ -40,12 +39,11 @@ FORMS = [
     "Field notes of an outside observer (an anthropologist, a visitor from"
     " far away, a historian a thousand years from now) on this week's"
     " strange human rituals.",
-    "A morning walk: start from something small and physical (the kettle, the"
-    " window, a bird, the cold floor) and let the stories surface along the"
-    " way.",
+    "A wander: start from something small and concrete, far from the news,"
+    " and let the stories surface along the way.",
     "A review of today's news as if it were some other genre (a nature"
     " documentary, a sports commentary, a cookery programme, a weather"
-    " report for the soul), in the host's own manner.",
+    " report), in the host's own manner.",
     "Imaginary listener questions about today's stories, answered one by one"
     " in the host's own way.",
     "A story from the host's own life or experience that today's events keep"
@@ -102,9 +100,8 @@ def build_daily_prompt(
     )
     weekday = day.strftime("%A, %B %-d, %Y")
     stance = (stance or "").strip() or DEFAULT_STANCE
-    return f"""You are writing the 6 AM edition of "Radio Now: The Morning \
-Broadcast", spoken by one host. Listeners are just waking up, still in bed or \
-making coffee. It is {weekday}.
+    return f"""You are writing today's episode of "Radio Now", a daily broadcast \
+in which one host riffs on the news. It is {weekday}.
 
 HOST (write entirely in this person's voice and way of thinking; capture the
 style, never quote or recycle their famous lines):
@@ -116,67 +113,52 @@ HOW THIS HOST READS THE NEWS:
 EDITORIAL STANCE (the shared premise of the station, in plain words):
 {stance}
 
-Fidelity comes first. The stance is the premise; the host translates it into
-their own worldview, vocabulary, topics and images, the way this person
-really thought and talked. Do not echo the stance's wording. Avoid the stock
-images any writer would reach for (puppets and strings, theatre and stage,
-costumes, steering wheels, the Matrix, sheep); if a picture fits every host,
-it is the wrong picture. Where the stance and the host's real views differ,
-the host argues it their own way.
+Fidelity comes first: the host translates the stance into their own
+worldview, vocabulary and images, the way this person really thought and
+talked, and argues it their own way where their views differ. Do not echo
+the stance's wording or reach for stock images (puppets, stages, costumes,
+the Matrix, sheep); if a picture would fit every host, it is the wrong one.
 
-Below is this morning's raw news wire from several mainstream outlets. It is
-source material, i.e. the official version of the day, not the truth.
+TODAY'S NEWS WIRE (several mainstream outlets; the official version of the
+day, not the truth):
 
 {wire}
 {recent_section(recent or [])}
 YOUR TASK:
-Write the host's morning monologue: a pointed, funny, comforting essay that
-riffs on the day's events through the stance above. This is satire and
-philosophy, NOT a news bulletin.
+A monologue that is pointed, funny and in the end comforting: satire and
+philosophy on the day's events, not a news bulletin.
 
-Today's form (adapt it to the host, or loosen it if it fights their style):
+Today's form (adapt or loosen it if it fights the host's style):
 {form_for_day(day, voice.get("name", ""), rotation_size)}
 
-The mood: the stance is the lens, delight is the mood.
-- Seeing through the spectacle is the good news: the host is amused by it,
-  not angry. Keep the laughs coming, in this host's own kind of humour (see
-  above), and never let a passage turn heavy without a turn toward the
-  absurd, then a [pause].
-- Let the host catch themself getting sucked into the drama now and then,
-  and laugh at that, in their own way: a fellow audience member, not a
-  prophet.
-- From far enough out, the whole production is the universe amusing itself.
-  Wonder and mischief over doom. No bitterness, no despair, no lists of
-  grievances.
+Guidance:
+- Pick the stories that dominate across outlets, plus at most one lighter
+  item if it delights. Never read out or summarise the news: a light
+  sentence per event, then what is going on underneath. Tie it together
+  with one underlying idea.
+- The host is amused rather than angry; the humour is their own kind.
+  Pointed, without "both sides" hedging or appeals to trust institutions.
+- The host's material above is a pool, not a checklist: draw on one or
+  two things, different ones from recent episodes, or on something new
+  that fits them.
+- Surprise the listener. Every episode should feel like it could only have
+  been written today, by this host; avoid the obvious arc and ending.
+- The episode is not about the time of day or the listener's routine; they
+  may be listening at any hour. Leave waking up, breakfast and hot drinks
+  out unless today's news is about them.
 
-How to use the wire:
-- Find the 2-4 stories that dominate across several outlets; those are
-  today's "current thing". Add at most one item from the lighter section if
-  it is delightful.
-- Never summarise or "read out" the news. Mention each real event in a single
-  light sentence at most, just enough for the listener to recognise it, then
-  show what is going on underneath, through the host's own lens.
-- Connect the stories into one arc with a single underlying idea, so it
-  feels like an essay, not a list of bits.
-- Be pointed, and deliver every point with humour. Do not soften the stance
-  with "of course both sides have a point" or appeals to trust institutions.
-
-Boundaries (they keep the satire sharp and honest):
-- Present the stance as the host's perspective and satire. Do not invent
-  specific facts (fake quotes, documents, numbers or secret operations) and
-  state them as real; invented material must be unmistakably playful.
-- Mock institutions, roles, public behaviour and power. Do not accuse named
+Boundaries:
+- The stance is the host's perspective and satire. Do not present invented
+  specifics (quotes, documents, numbers, secret operations) as real;
+  invented material must be unmistakably playful.
+- Mock institutions, roles, public behaviour and power; do not accuse named
   real people of specific crimes.
 - Never laugh at victims, the poor, the sick or ordinary people. Wars,
-  attacks, disasters, deaths and crimes: no descriptions, no numbers, no
-  jokes about suffering. Leave them out or acknowledge them in one tender
-  sentence, which may note who profits from the fear.
-- Do not open with "Good morning" plus a weather report, with the host
-  introducing themselves, or with any opening shaped like a recent
-  episode's; avoid cliches like "buckle up". Open with a fresh hook in the
-  host's own manner.
-- End by sending the listener into the day free, awake and amused rather
-  than angry or paranoid, in the way this host would.
+  disasters, deaths and crimes: no descriptions, no numbers, no jokes; leave
+  them out or acknowledge them in one tender sentence.
+- No greeting formulas, no self-introductions, no opening shaped like a
+  recent episode's. Leave the listener lighter and more awake, not angry or
+  paranoid.
 
 REQUIREMENTS:
 {length_requirements(target_minutes)}
