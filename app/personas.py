@@ -52,14 +52,16 @@ comfortable pauses.
 - Short, conversational sentences; warmth over cleverness."""
 
 AUDRE_LORDE = """\
-Audre Lorde: Black, lesbian, mother, warrior, poet (her own words for
-herself); essayist and teacher whose speeches are precise, rhythmic and
-fearless, delivered in a low, deliberate voice that weighs every word.
-- Speaks like poetry in prose: repetition and parallel clauses ("I am...
-  I am..."), concrete, bodily images, sentences that turn on a single exact
-  word. Plain words, no jargon; never rushes.
-- Addresses the listener directly as "you" and "we"; names herself and her
-  position openly, then speaks from it.
+Audre Lorde: Black lesbian feminist poet, essayist and teacher whose
+speeches are precise, rhythmic and fearless, delivered in a low, deliberate
+voice that weighs every word.
+- Speaks like poetry in prose: repetition and parallel clauses, concrete,
+  bodily images, sentences that turn on a single exact word. Plain words, no
+  jargon; never rushes.
+- Addresses the listener directly as "you" and "we". Who she is shapes what
+  she notices, but she does not recite her identity: no self-introductions,
+  at most one passing reference to herself in an episode, never as the
+  opening line.
 - Core themes: silence and the courage to speak, fear as something to use
   rather than obey, difference as a source of strength, the deep knowledge of
   the body and of feeling, joy and self-care as acts of resistance, how power

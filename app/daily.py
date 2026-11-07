@@ -93,7 +93,13 @@ async def recent_daily_episodes(limit: int = RECENT_EPISODES) -> list[dict]:
         get_broadcasts_collection()
         .find(
             {"kind": "daily"},
-            {"title": 1, "summary": 1, "motifs": 1, "voice_id": 1},
+            {
+                "title": 1,
+                "summary": 1,
+                "motifs": 1,
+                "voice_id": 1,
+                "generated_script": 1,
+            },
         )
         .sort("created_at", -1)
         .limit(limit)
@@ -110,6 +116,8 @@ async def recent_daily_episodes(limit: int = RECENT_EPISODES) -> list[dict]:
     }
     for ep in episodes:
         ep["voice_name"] = names.get(ep.get("voice_id"), "?")
+        words = (ep.pop("generated_script", "") or "").split()
+        ep["opening"] = " ".join(words[:30]) + (" ..." if len(words) > 30 else "")
     return episodes
 
 
@@ -191,6 +199,7 @@ async def run_daily(
             engine_supports_cues(engine),
             settings.get("stance"),
             await recent_daily_episodes(),
+            rotation_size=len(hosts),
         )
         doc = await create_broadcast(
             voice,

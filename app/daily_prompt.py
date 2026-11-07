@@ -53,8 +53,15 @@ FORMS = [
 ]
 
 
-def form_for_day(day: date, voice_name: str) -> str:
-    return random.Random(f"{day.isoformat()}:{voice_name}").choice(FORMS)
+def form_for_day(day: date, voice_name: str, rotation_size: int = 1) -> str:
+    """Each host walks through all forms in a host-specific order.
+
+    The host's n-th appearance in the rotation gets the n-th form of their
+    permutation, so a host never repeats a form within len(FORMS) episodes.
+    """
+    order = random.Random(voice_name).sample(range(len(FORMS)), len(FORMS))
+    appearance = day.toordinal() // max(1, rotation_size)
+    return FORMS[order[appearance % len(FORMS)]]
 
 
 def recent_section(recent: list[dict]) -> str:
@@ -66,11 +73,14 @@ def recent_section(recent: list[dict]) -> str:
         motifs = ", ".join(ep.get("motifs") or [])
         line = f'- {ep.get("voice_name", "?")}: "{ep.get("title", "")}"'
         line += f" (images: {motifs})" if motifs else f' ({ep.get("summary", "")})'
+        if ep.get("opening"):
+            line += f'\n  Opened with: "{ep["opening"]}"'
         lines.append(line)
     listed = "\n".join(lines)
     return f"""
 RECENT EPISODES (the listener heard these; do not reuse their titles, central
-images, metaphors, running jokes or overall framing; find fresh ones):
+images, metaphors, running jokes, overall framing or the shape and wording of
+their openings; find fresh ones):
 {listed}
 """
 
@@ -83,6 +93,7 @@ def build_daily_prompt(
     cues_supported: bool,
     stance: str | None = None,
     recent: list[dict] | None = None,
+    rotation_size: int = 1,
 ) -> str:
     persona = persona_for_voice(voice) or f"{voice['name']}, a warm and witty host."
     angle = morning_angle_for_voice(voice) or (
@@ -124,7 +135,7 @@ riffs on the day's events through the stance above. This is satire and
 philosophy, NOT a news bulletin.
 
 Today's form (adapt it to the host, or loosen it if it fights their style):
-{form_for_day(day, voice.get("name", ""))}
+{form_for_day(day, voice.get("name", ""), rotation_size)}
 
 The mood: the stance is the lens, delight is the mood.
 - Seeing through the spectacle is the good news: the host is amused by it,
@@ -160,8 +171,10 @@ Boundaries (they keep the satire sharp and honest):
   attacks, disasters, deaths and crimes: no descriptions, no numbers, no
   jokes about suffering. Leave them out or acknowledge them in one tender
   sentence, which may note who profits from the fear.
-- Do not open with "Good morning" plus a weather report, and avoid cliches
-  like "buckle up". Open with a hook in the host's own manner.
+- Do not open with "Good morning" plus a weather report, with the host
+  introducing themselves, or with any opening shaped like a recent
+  episode's; avoid cliches like "buckle up". Open with a fresh hook in the
+  host's own manner.
 - End by sending the listener into the day free, awake and amused rather
   than angry or paranoid, in the way this host would.
 
