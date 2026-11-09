@@ -12,6 +12,9 @@ env/
 .env.*
 !.env.sample
 
+# Local Compose overrides (not part of the repo)
+docker-compose.override.yml
+
 # IDE
 .vscode/
 .idea/

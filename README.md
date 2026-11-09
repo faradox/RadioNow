@@ -58,9 +58,6 @@ RADIONOW_PORT=8090
 # Optional local Mongo credentials (used when RADIONOW_MONGO_URL is unset):
 # RADIONOW_MONGO_INITDB_ROOT_USERNAME=admin
 # RADIONOW_MONGO_INITDB_ROOT_PASSWORD=admin
-
-# Optional docker network override (defaults to breathnet):
-# DOCKER_NETWORK_NAME=breathnet
 ```
 
 ### 2) Build and run
@@ -83,7 +80,7 @@ Behavior:
 These match the repository `Makefile`:
 
 - `make build` - Build the Docker image
-- `make init` - Ensure `audio/` and `voices/` directories exist
+- `make init` - Ensure `audio/`, `voices/` and `jingles/` directories exist
 - `make run` - Start services
 - `make logs` - Show application logs
 - `make shell` - Open a shell in the app container
@@ -132,4 +129,5 @@ radionow/
 - This repo intentionally does not contain runtime secrets.
 - `.env` files are gitignored.
 - If deploying publicly, place `/admin` behind authentication and HTTPS.
-- The stack uses an external Docker network (`breathnet` by default). `make init`/`make run` creates it automatically when missing.
+- Machine-specific Compose settings (extra networks, env defaults) can go in an
+  untracked `docker-compose.override.yml`, which Docker Compose loads automatically.

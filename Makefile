@@ -6,7 +6,6 @@ uid := $(shell id -u)
 gid := $(shell id -g)
 
 PROJECT_NAME := radionow
-DOCKER_NETWORK_NAME ?= breathnet
 
 build:
 	@echo "Building radionow image..."
@@ -15,8 +14,6 @@ build:
 init:
 	@echo "Ensuring local data directories exist..."
 	@mkdir -p audio voices jingles
-	@echo "Ensuring Docker network exists: $(DOCKER_NETWORK_NAME)"
-	@docker network inspect $(DOCKER_NETWORK_NAME) >/dev/null 2>&1 || docker network create $(DOCKER_NETWORK_NAME)
 
 logs:
 	@docker logs radionow
@@ -62,6 +59,4 @@ help:
 	@echo ''
 	@echo 'Maintenance Commands:'
 	@echo '  stop                - Stop the radionow container'
-	@echo ''
-	@echo 'Note: Deployment is handled by the root Makefile'
 	@echo '=========================='

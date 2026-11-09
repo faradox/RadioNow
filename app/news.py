@@ -28,7 +28,13 @@ DEFAULT_FEEDS = [
 
 PER_FEED_LIMIT = {"world": 12, "light": 6}
 SUMMARY_CHARS = 240
-USER_AGENT = "RadioNow/1.0 (+https://now.breathdance.net)"
+# Contact URL in the User-Agent sent to feed servers; empty drops it.
+NEWS_CONTACT_URL = os.getenv(
+    "NEWS_CONTACT_URL", "https://github.com/faradox/RadioNow"
+).strip()
+USER_AGENT = (
+    f"RadioNow/1.0 (+{NEWS_CONTACT_URL})" if NEWS_CONTACT_URL else "RadioNow/1.0"
+)
 
 
 @dataclass

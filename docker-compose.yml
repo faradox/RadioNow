@@ -1,5 +1,4 @@
 x-all: &all
-  DOCKER_NETWORK_NAME: ${DOCKER_NETWORK_NAME:-breathnet}
   ENVIRONMENT: ${RADIONOW_ENVIRONMENT:-production}
   LOG_LEVEL: ${RADIONOW_LOG_LEVEL:-INFO}
   GEMINI_API_KEY: ${RADIONOW_GEMINI_API_KEY:-}
@@ -12,6 +11,7 @@ x-all: &all
   DAILY_ENABLED: ${RADIONOW_DAILY_ENABLED:-true}
   DAILY_TIME: ${RADIONOW_DAILY_TIME:-06:00}
   NEWS_FEEDS: ${RADIONOW_NEWS_FEEDS:-}
+  NEWS_CONTACT_URL: ${RADIONOW_NEWS_CONTACT_URL:-https://github.com/faradox/RadioNow}
   REPLICATE_PRICES: ${RADIONOW_REPLICATE_PRICES:-}
   TZ: Europe/Berlin
   REPLICATE_API_TOKEN: ${RADIONOW_REPLICATE_API_TOKEN:?}
@@ -36,9 +36,6 @@ services:
     environment:
       <<: [*all]
       PORT: 8090
-    networks:
-      breathnet:
-        ipv4_address: 172.29.6.1
     healthcheck:
       test: ["CMD-SHELL", "python -c \"import urllib.request; urllib.request.urlopen('http://localhost:8090/health').read()\""]
       interval: 30s
@@ -55,9 +52,6 @@ services:
       MONGO_INITDB_ROOT_PASSWORD: ${RADIONOW_MONGO_INITDB_ROOT_PASSWORD:-admin}
     volumes:
       - radionow_mongodb_data:/data/db
-    networks:
-      breathnet:
-        ipv4_address: 172.29.6.2
     healthcheck:
       test: ["CMD-SHELL", "mongosh --quiet --eval \"db.adminCommand('ping').ok\" mongodb://${RADIONOW_MONGO_INITDB_ROOT_USERNAME:-admin}:${RADIONOW_MONGO_INITDB_ROOT_PASSWORD:-admin}@localhost:27017/admin | grep 1"]
       interval: 10s
@@ -67,8 +61,3 @@ services:
 
 volumes:
   radionow_mongodb_data:
-
-networks:
-  breathnet:
-    external: true
-    name: ${DOCKER_NETWORK_NAME:-breathnet}
